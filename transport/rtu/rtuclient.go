@@ -1,6 +1,7 @@
-// Copyright 2014 Quoc-Viet Nguyen. All rights reserved.
+// Copyright (c) 2014 Quoc-Viet Nguyen. All rights reserved.
+// Copyright (c) 2025 Li Jinling. All rights reserved.
 // This software may be modified and distributed under the terms
-// of the BSD license. See the LICENSE file for details.
+// of the BSD-3 Clause License. See the LICENSE file for details.
 
 package rtu
 
@@ -16,6 +17,9 @@ import (
 
 	"github.com/ffutop/modbus-gateway/modbus"
 )
+
+// ErrRequestTimedOut is returned when a response is not received within the specified timeout.
+var ErrRequestTimedOut = errors.New("modbus: request timed out")
 
 const (
 	stateSlaveID = 1 << iota
@@ -86,7 +90,7 @@ func readIncrementally(slaveID, functionCode byte, r io.Reader, deadline time.Ti
 
 	for {
 		if time.Now().After(deadline) { // Possible that serialport may spew data
-			return nil, errors.New("failed to read from serial port within deadline")
+			return nil, ErrRequestTimedOut
 		}
 
 		if _, err := io.ReadAtLeast(r, buf, 1); err != nil {
