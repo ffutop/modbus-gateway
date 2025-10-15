@@ -21,7 +21,14 @@ func main() {
 
 	// Set json log handler
 	level := logLevelMap[config.LogLevel]
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	writer := os.Stdout
+	if config.LogFile != "" {
+		writer, err = os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			slog.Error("open log file failed", "err", err)
+		}
+	}
+	handler := slog.NewJSONHandler(writer, &slog.HandlerOptions{
 		Level:     level,
 		AddSource: level <= slog.LevelDebug,
 	})
