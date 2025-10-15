@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 
+	"github.com/ffutop/modbus-gateway/modbus"
 	"github.com/ffutop/modbus-gateway/transport"
 	"github.com/ffutop/modbus-gateway/transport/rtu"
 	"github.com/ffutop/modbus-gateway/transport/tcp"
@@ -39,7 +40,7 @@ func NewGateway(config *Config) *Gateway {
 
 // Run Gateway
 func (g *Gateway) Run() error {
-	slog.Info("init Modbus RTU client", "device", g.config.Device, "baudRate", g.config.BaudRate, "dataBits", g.config.DataBits, "parity", g.config.Parity, "stopBits", g.config.StopBits)
+	slog.Info("init Modbus RTU client", "device", g.config.Device, "baudRate", g.config.BaudRate, "dataBits", g.config.DataBits, "parity", g.config.Parity, "stopBits", g.config.StopBits, "timeout", g.config.Timeout)
 	// Create a RTU Client Handler
 	rtuHandler := rtu.NewRTUClientHandler(g.config.Device)
 	rtuHandler.BaudRate = g.config.BaudRate
@@ -47,6 +48,14 @@ func (g *Gateway) Run() error {
 	rtuHandler.Parity = g.config.Parity
 	rtuHandler.StopBits = g.config.StopBits
 	rtuHandler.Timeout = g.config.Timeout
+	if g.config.RS485 {
+		rtuHandler.RS485.Enabled = true
+		rtuHandler.RS485.DelayRtsBeforeSend = g.config.DelayRtsBeforeSend
+		rtuHandler.RS485.DelayRtsAfterSend = g.config.DelayRtsAfterSend
+		rtuHandler.RS485.RtsHighDuringSend = g.config.RtsHighDuringSend
+		rtuHandler.RS485.RtsHighAfterSend = g.config.RtsHighAfterSend
+		rtuHandler.RS485.RxDuringTx = g.config.RxDuringTx
+	}
 
 	// Create a RTU Client
 	g.rtuClient = transport.NewClient(rtuHandler)
@@ -147,22 +156,42 @@ func (g *Gateway) rtuWorker() {
 		// Send request to RTU device
 		rtuRawResp, err := g.rtuClient.Send(context.Background(), rtuRawReq)
 		if err != nil {
-			slog.Error("RTU request failed", "err", err)
-		} else {
-			slog.Info("RTU response received", "response", hex.EncodeToString(rtuRawResp))
+			slog.Error("RTU request failed, preparing exception response", "err", err, "tid", tcpAduReq.TransactionID)
+			// 当RTU请求失败时（例如超时），构建一个Modbus异常响应
+			// 异常功能码 = 原始功能码 + 0x80
+			// 异常码 0x0B = 网关目标设备无法响应
+			tcpAduResp := &tcp.ApplicationDataUnit{
+				TransactionID: tcpAduReq.TransactionID,
+				ProtocolID:    tcpAduReq.ProtocolID,
+				Length:        3, // SlaveID(1) + FuncCode(1) + ExceptionCode(1)
+				SlaveID:       tcpAduReq.SlaveID,
+				Pdu: modbus.ProtocolDataUnit{
+					FunctionCode: tcpAduReq.Pdu.FunctionCode | 0x80,
+					Data:         []byte{0x0B}, // Gateway Target Device Failed to Respond
+				},
+			}
+			tcpRawResp, _ := tcpAduResp.Encode()                            // 理论上不应失败
+			req.response <- &queuedResponse{response: tcpRawResp, err: nil} // err为nil，因为我们成功生成了异常响应
+			continue
 		}
+
+		slog.Info("RTU response received", "response", hex.EncodeToString(rtuRawResp))
 
 		// transform RTU ADU to TCP ADU
 		rtuAduResp, err := rtu.Decode(rtuRawResp)
 		if err != nil {
 			slog.Error("Failed to decode RTU response", "err", err)
-			continue
+			// 解码失败也应通知客户端，但这是一个更严重的网关内部错误
+			// 简单起见，我们这里也返回一个通用网关错误，或者可以定义一个新的异常码
+			// 此处暂时忽略，让请求超时
+			req.response <- &queuedResponse{response: nil, err: err}
+			continue // or close the channel?
 		}
 		tcpAduResp := &tcp.ApplicationDataUnit{
-			TransactionID: req.request.TransactionID,
-			ProtocolID:    req.request.ProtocolID,
+			TransactionID: tcpAduReq.TransactionID,
+			ProtocolID:    tcpAduReq.ProtocolID,
 			Length:        uint16(len(rtuAduResp.Pdu.Data) + 2),
-			SlaveID:       req.request.SlaveID,
+			SlaveID:       tcpAduReq.SlaveID,
 			Pdu:           rtuAduResp.Pdu,
 		}
 
@@ -174,7 +203,7 @@ func (g *Gateway) rtuWorker() {
 		slog.Info("TCP response encoded", "response", hex.EncodeToString(tcpRawResp))
 
 		// Send response back to the original request goroutine
-		req.response <- &queuedResponse{response: tcpRawResp, err: err}
+		req.response <- &queuedResponse{response: tcpRawResp, err: nil}
 	}
 	slog.Debug("RTU worker stopped", "device", g.config.Device)
 }
