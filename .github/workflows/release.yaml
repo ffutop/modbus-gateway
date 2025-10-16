@@ -67,15 +67,15 @@ jobs:
           if [ "${{ env.ARCHIVE_EXT }}" = "zip" ]; then
             zip ../${{ env.ARCHIVE_NAME }}{{ env.ARCHIVE_EXT}} *
           else
-            tar -czf ../${{ env.ARCHIVE_NAME }}{{ env.ARCHIVE_EXT }} *
+            tar -czf ../${{ env.ARCHIVE_NAME }}${{ env.ARCHIVE_EXT }} *
           fi
           cd ..
 
       - name: Upload artifact for release
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARCHIVE_NAME }}{{ env.ARCHIVE_EXT }}
-          path: ${{ env.ARCHIVE_NAME }}{{ env.ARCHIVE_EXT }}
+          name: ${{ env.ARCHIVE_NAME }}${{ env.ARCHIVE_EXT }}
+          path: ${{ env.ARCHIVE_NAME }}${{ env.ARCHIVE_EXT }}
 
   release:
     name: Create GitHub Release
