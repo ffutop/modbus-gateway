@@ -1,0 +1,95 @@
+name: Release Go Binaries
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Define the build matrix for GOOS and GOARCH
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        # Exclude unsupported combinations (if any)
+        # exclude:
+        #   - goos: darwin
+        #     goarch: arm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Set output executable name and archive name
+        id: set_names
+        run: |
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            EXECUTABLE_NAME="modbus-gateway.exe"
+            ARCHIVE_EXT="zip"
+          else
+            EXECUTABLE_NAME="modbus-gateway"
+            ARCHIVE_EXT="tar.gz"
+          fi
+          
+          # set archive name
+          ARCHIVE_NAME="modbus-gateway-${{ matrix.goos }}-${{ matrix.goarch }}."
+          
+          # set environment variables for GitHub Actions
+          echo "EXECUTABLE_NAME=${EXECUTABLE_NAME}" >> $GITHUB_ENV
+          echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
+          echo "ARCHIVE_EXT=${ARCHIVE_EXT}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          # set environment variables for cross-compilation
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath -ldflags="-s -w" -o ${{ env.EXECUTABLE_NAME }} .
+
+      - name: Package artifacts
+        run: |
+          # create a temporary directory for packaging
+          mkdir -p release_package
+          mv ${{ env.EXECUTABLE_NAME }} release_package/
+          cp LICENSE release_package/
+          
+          # package artifacts based on the operating system type
+          cd release_package
+          if [ "${{ env.ARCHIVE_EXT }}" = "zip" ]; then
+            zip ../${{ env.ARCHIVE_NAME }} *
+          else
+            tar -czf ../${{ env.ARCHIVE_NAME }} *
+          fi
+          cd ..
+
+      - name: Upload artifact for release
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE_NAME }}
+          path: ${{ env.ARCHIVE_NAME }}
+
+  release:
+    name: Create GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*
