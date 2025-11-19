@@ -2,10 +2,33 @@
 <html lang="en" class="scroll-smooth">  
 <head>  
     <meta charset="UTF-8">  
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">  
-    <title>Modbus Gateway</title>  
-    <meta name="description" content="A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go.">  
-      
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>Modbus Gateway - High Performance TCP to RTU Bridge (Golang)</title>  
+    <meta name="description" content="An open-source, high-performance Modbus TCP to Modbus RTU (RS485) gateway written in Go. Features concurrent handling, queuing mechanisms, and flexible configuration.">
+    <meta name="keywords" content="Modbus Gateway, Modbus TCP, Modbus RTU, RS485, Golang, IoT Gateway, Serial Bridge, SCADA, Industrial Automation, Open Source">
+    <meta name="author" content="ffutop">
+    <meta name="robots" content="index, follow">
+
+    <link rel="canonical" href="https://www.ffutop.com/modbus-gateway/" />  
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">  
+    <meta property="og:url" content="https://www.ffutop.com/modbus-gateway/">  
+    <meta property="og:title" content="Modbus Gateway - High Performance Go Bridge">  
+    <meta property="og:description" content="Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts. Built with Go.">  
+    <meta property="og:image" content="https://www.ffutop.com/modbus-gateway/assets/og-image.png">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">  
+    <meta name="twitter:url" content="https://www.ffutop.com/modbus-gateway/">  
+    <meta name="twitter:title" content="Modbus Gateway - TCP to RTU Bridge">  
+    <meta name="twitter:description" content="High-performance, concurrent Modbus gateway written in Go.">  
+    <meta name="twitter:image" content="https://www.ffutop.com/modbus-gateway/assets/og-image.png">  
+
+    <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+
     <!-- Tailwind CSS -->  
     <script src="https://cdn.tailwindcss.com"></script>  
       
@@ -15,7 +38,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Risque&display=swap" rel="stylesheet">  
       
     <!-- Icons -->  
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">  
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script type="application/ld+json">  
+    {  
+      "@context": "https://schema.org",  
+      "@type": "SoftwareApplication",  
+      "name": "Modbus Gateway",  
+      "operatingSystem": "Linux, Windows, macOS",  
+      "applicationCategory": "DeveloperApplication",  
+      "offers": {  
+        "@type": "Offer",  
+        "price": "0",  
+        "priceCurrency": "USD"  
+      },  
+      "description": "A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go.",  
+      "softwareVersion": "1.0.0",  
+      "author": {  
+        "@type": "Person",  
+        "name": "ffutop",  
+        "url": "https://github.com/ffutop"  
+      },  
+      "downloadUrl": "https://github.com/ffutop/modbus-gateway/releases",  
+      "codeRepository": "https://github.com/ffutop/modbus-gateway"  
+    }  
+    </script>  
       
     <script>  
         tailwind.config = {  
