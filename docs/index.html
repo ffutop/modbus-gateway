@@ -1,431 +1,439 @@
-<!DOCTYPE html>  
-<html lang="en" class="scroll-smooth">  
-<head>  
-    <meta charset="UTF-8">  
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <title>Modbus Gateway - High Performance TCP to RTU Bridge (Golang)</title>  
+
+    <title>Modbus Gateway - High Performance TCP to RTU Bridge (Golang)</title>
     <meta name="description" content="An open-source, high-performance Modbus TCP to Modbus RTU (RS485) gateway written in Go. Features concurrent handling, queuing mechanisms, and flexible configuration.">
     <meta name="keywords" content="Modbus Gateway, Modbus TCP, Modbus RTU, RS485, Golang, IoT Gateway, Serial Bridge, SCADA, Industrial Automation, Open Source">
     <meta name="author" content="ffutop">
     <meta name="robots" content="index, follow">
 
-    <link rel="canonical" href="https://www.ffutop.com/modbus-gateway/" />  
+    <link rel="canonical" href="https://www.ffutop.com/modbus-gateway/" />
 
     <!-- Open Graph -->
-    <meta property="og:type" content="website">  
-    <meta property="og:url" content="https://www.ffutop.com/modbus-gateway/">  
-    <meta property="og:title" content="Modbus Gateway - High Performance Go Bridge">  
-    <meta property="og:description" content="Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts. Built with Go.">  
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://www.ffutop.com/modbus-gateway/">
+    <meta property="og:title" content="Modbus Gateway - High Performance Go Bridge">
+    <meta property="og:description" content="Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts. Built with Go.">
     <meta property="og:image" content="https://www.ffutop.com/modbus-gateway/assets/og-image.png">
 
     <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">  
-    <meta name="twitter:url" content="https://www.ffutop.com/modbus-gateway/">  
-    <meta name="twitter:title" content="Modbus Gateway - TCP to RTU Bridge">  
-    <meta name="twitter:description" content="High-performance, concurrent Modbus gateway written in Go.">  
-    <meta name="twitter:image" content="https://www.ffutop.com/modbus-gateway/assets/og-image.png">  
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://www.ffutop.com/modbus-gateway/">
+    <meta name="twitter:title" content="Modbus Gateway - TCP to RTU Bridge">
+    <meta name="twitter:description" content="High-performance, concurrent Modbus gateway written in Go.">
+    <meta name="twitter:image" content="https://www.ffutop.com/modbus-gateway/assets/og-image.png">
 
     <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
-    <!-- Tailwind CSS -->  
-    <script src="https://cdn.tailwindcss.com"></script>  
-      
-    <!-- Fonts -->  
-    <link rel="preconnect" href="https://fonts.googleapis.com">  
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>  
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Risque&display=swap" rel="stylesheet">  
-      
-    <!-- Icons -->  
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Risque&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <script type="application/ld+json">  
-    {  
-      "@context": "https://schema.org",  
-      "@type": "SoftwareApplication",  
-      "name": "Modbus Gateway",  
-      "operatingSystem": "Linux, Windows, macOS",  
-      "applicationCategory": "DeveloperApplication",  
-      "offers": {  
-        "@type": "Offer",  
-        "price": "0",  
-        "priceCurrency": "USD"  
-      },  
-      "description": "A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go.",  
-      "softwareVersion": "1.0.0",  
-      "author": {  
-        "@type": "Person",  
-        "name": "ffutop",  
-        "url": "https://github.com/ffutop"  
-      },  
-      "downloadUrl": "https://github.com/ffutop/modbus-gateway/releases",  
-      "codeRepository": "https://github.com/ffutop/modbus-gateway"  
-    }  
-    </script>  
-      
-    <script>  
-        tailwind.config = {  
-            theme: {  
-                extend: {  
-                    fontFamily: {  
-                        sans: ['Inter', 'sans-serif'],  
-                        mono: ['JetBrains Mono', 'monospace'],  
-                        logo: ['Risque', 'serif'],  
-                    },  
-                    colors: {  
-                        border: "hsl(var(--border))",  
-                        background: "hsl(var(--background))",  
-                        foreground: "hsl(var(--foreground))",  
-                    }  
-                }  
-            }  
-        }  
-    </script>  
-  
-    <style>  
-        /* Shadcn-like Variables */  
-        :root {  
-            --background: 0 0% 100%;  
-            --foreground: 240 10% 3.9%;  
-            --card: 0 0% 100%;  
-            --card-foreground: 240 10% 3.9%;  
-            --popover: 0 0% 100%;  
-            --popover-foreground: 240 10% 3.9%;  
-            --primary: 240 5.9% 10%;  
-            --primary-foreground: 0 0% 98%;  
-            --secondary: 240 4.8% 95.9%;  
-            --secondary-foreground: 240 5.9% 10%;  
-            --muted: 240 4.8% 95.9%;  
-            --muted-foreground: 240 3.8% 46.1%;  
-            --accent: 240 4.8% 95.9%;  
-            --accent-foreground: 240 5.9% 10%;  
-            --destructive: 0 84.2% 60.2%;  
-            --destructive-foreground: 0 0% 98%;  
-            --border: 240 5.9% 90%;  
-            --input: 240 5.9% 90%;  
-            --ring: 240 5.9% 10%;  
-        }  
-  
-        body {  
-            background-color: white;  
-            color: #09090b; /* zinc-950 */  
-            font-family: 'Inter', sans-serif;  
-        }  
-  
-        /* Custom scrollbar */  
-        ::-webkit-scrollbar { width: 6px; }  
-        ::-webkit-scrollbar-track { background: transparent; }  
-        ::-webkit-scrollbar-thumb { background: #e4e4e7; border-radius: 3px; }  
-        ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }  
-          
-        .font-risque { font-family: 'Risque', serif; }  
-          
-        /* Diagrams */  
-        .diagram-box {  
-            background: white;  
-            border: 1px solid #e4e4e7; /* zinc-200 */  
-            border-radius: 0.5rem;  
-            transition: all 0.2s;  
-        }  
-        .diagram-box-main {  
-            background: #09090b; /* zinc-950 */  
-            color: white;  
-            border: 1px solid #09090b;  
-        }  
-    </style>  
-</head>  
-<body class="antialiased min-h-screen flex flex-col">  
-  
-    <!-- Navigation -->  
-    <nav class="sticky top-0 z-50 w-full border-b border-zinc-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">  
-        <div class="max-w-screen-xl mx-auto px-4 md:px-8">  
-            <div class="flex h-14 items-center justify-between">  
-                <!-- Logo Area -->  
-                <a href="#" class="flex items-center gap-2 hover:opacity-80 transition-opacity">  
-                    <span class="font-risque text-3xl md:text-4xl tracking-wide text-zinc-950">Modbus Gateway</span>  
-                </a>  
-  
-                <!-- Desktop Nav -->  
-                <div class="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-600">  
-                    <a href="#architecture" class="hover:text-zinc-950 transition-colors" data-en="Architecture" data-cn="架构">Architecture</a>  
-                    <a href="#features" class="hover:text-zinc-950 transition-colors" data-en="Features" data-cn="特性">Features</a>  
-                    <a href="#usage" class="hover:text-zinc-950 transition-colors" data-en="Usage" data-cn="使用">Usage</a>  
-                    <a href="https://github.com/ffutop/modbus-gateway" target="_blank" class="hover:text-zinc-950 transition-colors">  
-                        <i class="fa-brands fa-github text-lg"></i>  
-                    </a>  
-                    <button onclick="toggleLanguage()" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-zinc-200 bg-white hover:bg-zinc-100 hover:text-zinc-900 h-9 px-4 py-2">  
-                        <span id="lang-btn-text">CN</span>  
-                    </button>  
-                </div>  
-            </div>  
-        </div>  
-    </nav>  
-  
-    <!-- Hero Section -->  
-    <main class="flex-1">  
-        <section class="space-y-6 pb-8 pt-20 md:pb-12 md:pt-24 lg:py-32">  
-            <div class="container max-w-screen-xl mx-auto px-4 md:px-8 flex flex-col items-center gap-4 text-center">  
-                  
-                <div class="rounded-2xl bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-800 mb-2">  
-                    <span data-en="v1.0.0 Released" data-cn="v1.0.0 已发布">v1.0.0 Released</span>  
-                </div>  
-  
-                <h1 class="font-bold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter text-zinc-950 max-w-4xl">  
-                    <span class="font-risque block mb-2">Modbus Gateway</span>  
-                    <span class="text-zinc-400 font-sans text-3xl sm:text-5xl font-semibold" data-en="TCP to RTU Bridge" data-cn="TCP 转 RTU 桥接器">TCP to RTU Bridge</span>  
-                </h1>  
-                  
-                <p class="max-w-[42rem] leading-normal text-zinc-500 sm:text-xl sm:leading-8 font-light">  
-                    <span data-en="A high-performance, configurable gateway written in Go. Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts."   
-                          data-cn="使用 Go 语言编写的高性能、可配置网关。支持多个 Modbus TCP 主站无冲突地连接到单个串行 RTU 从站。">  
-                        A high-performance, configurable gateway written in Go. Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts.  
-                    </span>  
-                </p>  
-                  
-                <div class="flex flex-wrap items-center justify-center gap-4 mt-4">  
-                    <a href="https://github.com/ffutop/modbus-gateway/releases" class="inline-flex h-11 items-center justify-center rounded-md bg-zinc-900 px-8 text-sm font-medium text-zinc-50 shadow transition-colors hover:bg-zinc-900/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950">  
-                        <span data-en="Download Binary" data-cn="下载二进制文件">Download Binary</span>  
-                    </a>  
-                    <a href="#usage" class="inline-flex h-11 items-center justify-center rounded-md border border-zinc-200 bg-white px-8 text-sm font-medium shadow-sm transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950">  
-                        <span data-en="Documentation" data-cn="查看文档">Documentation</span>  
-                    </a>  
-                </div>  
-            </div>  
-        </section>  
-  
-        <!-- Architecture Diagram -->  
-        <section id="architecture" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24 border-t border-zinc-100">  
-            <div class="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-12">  
-                <h2 class="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-4xl tracking-tight" data-en="Architecture" data-cn="架构设计">Architecture</h2>  
-                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Serialized concurrency control ensures bus stability." data-cn="串行化并发控制确保总线稳定性。">  
-                    Serialized concurrency control ensures bus stability.  
-                </p>  
-            </div>  
-  
-            <!-- The Schematic Diagram -->  
-            <div class="flex flex-col md:flex-row items-center justify-center gap-6 py-8 select-none font-mono text-sm">  
-                  
-                <!-- Left: TCP Clients -->  
-                <div class="flex flex-col gap-3 w-full md:w-64">  
-                    <div class="diagram-box border-dashed border-2 p-4 flex flex-col gap-2 bg-zinc-50/50">  
-                        <div class="text-center text-zinc-400 text-xs font-sans font-semibold uppercase tracking-wider mb-1">TCP Masters</div>  
-                        <div class="diagram-box p-3 text-center shadow-sm">Client 1</div>  
-                        <div class="diagram-box p-3 text-center shadow-sm">Client 2</div>  
-                        <div class="diagram-box p-3 text-center shadow-sm">Client 3</div>  
-                    </div>  
-                </div>  
-  
-                <!-- Arrow TCP -->  
-                <div class="flex flex-col items-center text-zinc-400 gap-1">  
-                    <span class="text-[10px] font-sans uppercase tracking-wider">TCP/IP</span>  
-                    <i class="fa-solid fa-arrow-right hidden md:block text-xl"></i>  
-                    <i class="fa-solid fa-arrow-down md:hidden text-xl"></i>  
-                </div>  
-  
-                <!-- Center: Gateway -->  
-                <div class="diagram-box-main p-8 rounded-xl shadow-2xl w-full md:w-72 text-center relative overflow-hidden group">  
-                    <div class="absolute top-0 left-0 w-full h-1 bg-zinc-700"></div>  
-                    <i class="fa-solid fa-server text-4xl mb-4 text-white"></i>  
-                    <h3 class="font-bold text-lg font-risque tracking-wide">Gateway</h3>  
-                    <div class="mt-4 flex flex-col gap-1 opacity-80">  
-                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Queue Buffer</span>  
-                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Serializer</span>  
-                    </div>  
-                </div>  
-  
-                <!-- Arrow Serial -->  
-                <div class="flex flex-col items-center text-zinc-400 gap-1">  
-                    <span class="text-[10px] font-sans uppercase tracking-wider">RS485</span>  
-                    <i class="fa-solid fa-arrow-right hidden md:block text-xl"></i>  
-                    <i class="fa-solid fa-arrow-down md:hidden text-xl"></i>  
-                </div>  
-  
-                <!-- Right: Slave -->  
-                <div class="diagram-box p-6 w-full md:w-64 h-48 flex flex-col justify-center items-center text-center bg-zinc-50">  
-                    <div class="w-16 h-16 border-2 border-zinc-800 rounded-full flex items-center justify-center mb-3">  
-                        <i class="fa-solid fa-microchip text-2xl text-zinc-800"></i>  
-                    </div>  
-                    <div class="font-bold text-zinc-900">RTU Slave</div>  
-                    <div class="text-xs text-zinc-500 mt-1">/dev/ttyUSB0</div>  
-                </div>  
-  
-            </div>  
-        </section>  
-  
-        <!-- Features Grid -->  
-        <section id="features" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24">  
-            <div class="grid justify-center gap-4 sm:grid-cols-2 md:max-w-[64rem] md:grid-cols-3 mx-auto">  
-                  
-                <!-- Feature Items -->  
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">  
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">  
-                        <i class="fa-solid fa-right-left text-2xl text-zinc-900"></i>  
-                        <div class="space-y-2">  
-                            <h3 class="font-bold" data-en="Protocol Conversion" data-cn="协议转换">Protocol Conversion</h3>  
-                            <p class="text-sm text-zinc-500" data-en="Seamless conversion between Modbus TCP and Modbus RTU." data-cn="实现 Modbus TCP 到 Modbus RTU 的无缝转换。">Seamless conversion between Modbus TCP and Modbus RTU.</p>  
-                        </div>  
-                    </div>  
-                </div>  
-  
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">  
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">  
-                        <i class="fa-solid fa-layer-group text-2xl text-zinc-900"></i>  
-                        <div class="space-y-2">  
-                            <h3 class="font-bold" data-en="Concurrency" data-cn="并发处理">Concurrency</h3>  
-                            <p class="text-sm text-zinc-500" data-en="Multiple TCP clients connecting simultaneously via serialization queue." data-cn="支持多个 TCP 客户端同时连接，通过内部队列串行化。">Multiple TCP clients supported.</p>  
-                        </div>  
-                    </div>  
-                </div>  
-  
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">  
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">  
-                        <i class="fa-solid fa-sliders text-2xl text-zinc-900"></i>  
-                        <div class="space-y-2">  
-                            <h3 class="font-bold" data-en="Flexible Config" data-cn="灵活配置">Flexible Config</h3>  
-                            <p class="text-sm text-zinc-500" data-en="Configure via CLI arguments or YAML files." data-cn="支持通过命令行参数和 YAML 配置文件配置。">CLI arguments or YAML files.</p>  
-                        </div>  
-                    </div>  
-                </div>  
-  
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">  
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">  
-                        <i class="fa-solid fa-plug text-2xl text-zinc-900"></i>  
-                        <div class="space-y-2">  
-                            <h3 class="font-bold" data-en="RS485 Control" data-cn="RS485 控制">RS485 Control</h3>  
-                            <p class="text-sm text-zinc-500" data-en="Full support for RTS signal control." data-cn="内置对 RTS 信号控制的完整支持。">Full support for RTS signal control.</p>  
-                        </div>  
-                    </div>  
-                </div>  
-  
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">  
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">  
-                        <i class="fa-solid fa-file-lines text-2xl text-zinc-900"></i>  
-                        <div class="space-y-2">  
-                            <h3 class="font-bold" data-en="Logging" data-cn="日志系统">Logging</h3>  
-                            <p class="text-sm text-zinc-500" data-en="Configurable levels (debug, info, warn) and targets." data-cn="可配置的日志级别和输出目标。">Configurable levels and targets.</p>  
-                        </div>  
-                    </div>  
-                </div>  
-  
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">  
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">  
-                        <i class="fa-solid fa-link text-2xl text-zinc-900"></i>  
-                        <div class="space-y-2">  
-                            <h3 class="font-bold" data-en="Auto Reconnect" data-cn="自动重连">Auto Reconnect</h3>  
-                            <p class="text-sm text-zinc-500" data-en="Handles serial port disconnections and timeouts automatically." data-cn="自动处理串口断开和超时。">Handles serial port disconnections.</p>  
-                        </div>  
-                    </div>  
-                </div>  
-            </div>  
-        </section>  
-  
-        <!-- Usage / Install -->  
-        <section id="usage" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24 bg-zinc-50/50 border-y border-zinc-200">  
-            <div class="grid gap-12 md:grid-cols-2 max-w-6xl mx-auto">  
-                  
-                <!-- Column 1: CLI -->  
-                <div>  
-                    <h3 class="text-2xl font-bold tracking-tight mb-6 flex items-center gap-2">  
-                        <i class="fa-solid fa-terminal text-sm"></i>  
-                        <span data-en="Quick Start" data-cn="快速开始">Quick Start</span>  
-                    </h3>  
-                      
-                    <div class="space-y-6">  
-                        <div>  
-                            <p class="text-sm font-medium text-zinc-500 mb-2" data-en="1. Build" data-cn="1. 构建">1. Build</p>  
-                            <div class="bg-zinc-950 text-zinc-50 rounded-lg p-4 font-mono text-sm shadow-lg border border-zinc-800">  
-                                <div class="flex items-center justify-between text-zinc-500 text-xs mb-2 select-none">  
-                                    <span>bash</span>  
-                                </div>  
-                                <code class="block">git clone https://github.com/ffutop/modbus-gateway.git</code>  
-                                <code class="block mt-1">cd modbus-gateway</code>  
-                                <code class="block mt-1">go build -o modbus-gateway</code>  
-                            </div>  
-                        </div>  
-  
-                        <div>  
-                            <p class="text-sm font-medium text-zinc-500 mb-2" data-en="2. Run" data-cn="2. 运行">2. Run</p>  
-                            <div class="bg-zinc-950 text-zinc-50 rounded-lg p-4 font-mono text-sm shadow-lg border border-zinc-800">  
-                                <div class="text-zinc-400 text-xs mb-2 italic"># Listen on port 5020, Device /dev/ttyUSB0</div>  
-                                <code class="break-all">./modbus-gateway -p /dev/ttyUSB0 -s 9600 -P 5020 -v debug</code>  
-                            </div>  
-                        </div>  
-                    </div>  
-                </div>  
-  
-                <!-- Column 2: Config -->  
-                <div>  
-                    <h3 class="text-2xl font-bold tracking-tight mb-6 flex items-center gap-2">  
-                        <i class="fa-solid fa-gear text-sm"></i>  
-                        <span data-en="Configuration" data-cn="配置">Configuration</span>  
-                    </h3>  
-                      
-                    <p class="text-sm text-zinc-500 mb-4" data-en="Use config.yaml for advanced settings." data-cn="使用 config.yaml 进行高级设置。">Use <code>config.yaml</code> for advanced settings.</p>  
-  
-                    <div class="bg-white text-zinc-800 rounded-lg p-4 font-mono text-sm shadow-sm border border-zinc-200 h-[300px] overflow-y-auto">  
-<pre><code><span class="text-zinc-400"># TCP Server</span>  
-<span class="text-purple-600">tcp_address:</span> "0.0.0.0"  
-<span class="text-purple-600">tcp_port:</span> 502  
-<span class="text-purple-600">max_conns:</span> 32  
-  
-<span class="text-zinc-400"># Serial/RTU</span>  
-<span class="text-purple-600">device:</span> "/dev/ttyUSB0"  
-<span class="text-purple-600">baud_rate:</span> 19200  
-<span class="text-purple-600">data_bits:</span> 8  
-<span class="text-purple-600">parity:</span> "N"  
-<span class="text-purple-600">stop_bits:</span> 1  
-<span class="text-purple-600">timeout:</span> 500ms  
-  
-<span class="text-zinc-400"># RS485</span>  
-<span class="text-purple-600">rs485:</span>  
-  <span class="text-purple-600">enabled:</span> true  
-  <span class="text-purple-600">delay_rts_before_send:</span> 2ms</code></pre>  
-                    </div>  
-                </div>  
-  
-            </div>  
-        </section>  
-    </main>  
-  
-    <!-- Footer -->  
-    <footer class="border-t border-zinc-200 bg-white">  
-        <div class="container max-w-screen-xl mx-auto px-4 md:px-8 py-8 md:py-12">  
-            <div class="flex flex-col md:flex-row justify-between items-center gap-4">  
-                <div class="flex items-center gap-2">  
-                    <span class="font-risque text-xl">Modbus Gateway</span>  
-                    <span class="text-zinc-400 text-sm">© 2025 ffutop</span>  
-                </div>  
-                  
-                <div class="flex gap-6 text-sm font-medium text-zinc-600">  
-                    <a href="https://github.com/ffutop/modbus-gateway" class="hover:text-zinc-900 transition-colors">GitHub</a>  
-                    <a href="https://github.com/ffutop/modbus-gateway/issues" class="hover:text-zinc-900 transition-colors">Issues</a>  
-                    <a href="LICENSE" class="hover:text-zinc-900 transition-colors">BSD License</a>  
-                </div>  
-            </div>  
-        </div>  
-    </footer>  
-  
-    <script>  
-        let currentLang = 'en';  
-  
-        function toggleLanguage() {  
-            currentLang = currentLang === 'en' ? 'cn' : 'en';  
-              
-            const btnText = document.getElementById('lang-btn-text');  
-            btnText.textContent = currentLang === 'en' ? 'CN' : 'EN';  
-  
-            document.querySelectorAll('[data-en]').forEach(el => {  
-                const enText = el.getAttribute('data-en');  
-                const cnText = el.getAttribute('data-cn');  
-                  
-                if (currentLang === 'en') {  
-                    if (enText) el.textContent = enText;  
-                } else {  
-                    if (cnText) el.textContent = cnText;  
-                }  
-            });  
-        }  
-    </script>  
-</body>  
-</html>  
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Modbus Gateway",
+      "operatingSystem": "Linux, Windows, macOS",
+      "applicationCategory": "DeveloperApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "description": "A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go.",
+      "softwareVersion": "1.0.0",
+      "author": {
+        "@type": "Person",
+        "name": "ffutop",
+        "url": "https://github.com/ffutop"
+      },
+      "downloadUrl": "https://github.com/ffutop/modbus-gateway/releases",
+      "codeRepository": "https://github.com/ffutop/modbus-gateway"
+    }
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                        logo: ['Risque', 'serif'],
+                    },
+                    colors: {
+                        border: "hsl(var(--border))",
+                        background: "hsl(var(--background))",
+                        foreground: "hsl(var(--foreground))",
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-3RHY4L44ZL"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-3RHY4L44ZL');
+    </script>
+
+    <style>
+        /* Shadcn-like Variables */
+        :root {
+            --background: 0 0% 100%;
+            --foreground: 240 10% 3.9%;
+            --card: 0 0% 100%;
+            --card-foreground: 240 10% 3.9%;
+            --popover: 0 0% 100%;
+            --popover-foreground: 240 10% 3.9%;
+            --primary: 240 5.9% 10%;
+            --primary-foreground: 0 0% 98%;
+            --secondary: 240 4.8% 95.9%;
+            --secondary-foreground: 240 5.9% 10%;
+            --muted: 240 4.8% 95.9%;
+            --muted-foreground: 240 3.8% 46.1%;
+            --accent: 240 4.8% 95.9%;
+            --accent-foreground: 240 5.9% 10%;
+            --destructive: 0 84.2% 60.2%;
+            --destructive-foreground: 0 0% 98%;
+            --border: 240 5.9% 90%;
+            --input: 240 5.9% 90%;
+            --ring: 240 5.9% 10%;
+        }
+
+        body {
+            background-color: white;
+            color: #09090b; /* zinc-950 */
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e4e4e7; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+        .font-risque { font-family: 'Risque', serif; }
+
+        /* Diagrams */
+        .diagram-box {
+            background: white;
+            border: 1px solid #e4e4e7; /* zinc-200 */
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+        .diagram-box-main {
+            background: #09090b; /* zinc-950 */
+            color: white;
+            border: 1px solid #09090b;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-50 w-full border-b border-zinc-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div class="max-w-screen-xl mx-auto px-4 md:px-8">
+            <div class="flex h-14 items-center justify-between">
+                <!-- Logo Area -->
+                <a href="#" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                    <span class="font-risque text-3xl md:text-4xl tracking-wide text-zinc-950">Modbus Gateway</span>
+                </a>
+
+                <!-- Desktop Nav -->
+                <div class="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-600">
+                    <a href="#architecture" class="hover:text-zinc-950 transition-colors" data-en="Architecture" data-cn="架构">Architecture</a>
+                    <a href="#features" class="hover:text-zinc-950 transition-colors" data-en="Features" data-cn="特性">Features</a>
+                    <a href="#usage" class="hover:text-zinc-950 transition-colors" data-en="Usage" data-cn="使用">Usage</a>
+                    <a href="https://github.com/ffutop/modbus-gateway" target="_blank" class="hover:text-zinc-950 transition-colors">
+                        <i class="fa-brands fa-github text-lg"></i>
+                    </a>
+                    <button onclick="toggleLanguage()" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-zinc-200 bg-white hover:bg-zinc-100 hover:text-zinc-900 h-9 px-4 py-2">
+                        <span id="lang-btn-text">CN</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <main class="flex-1">
+        <section class="space-y-6 pb-8 pt-20 md:pb-12 md:pt-24 lg:py-32">
+            <div class="container max-w-screen-xl mx-auto px-4 md:px-8 flex flex-col items-center gap-4 text-center">
+
+                <div class="rounded-2xl bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-800 mb-2">
+                    <span data-en="v1.0.0 Released" data-cn="v1.0.0 已发布">v1.0.0 Released</span>
+                </div>
+
+                <h1 class="font-bold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter text-zinc-950 max-w-4xl">
+                    <span class="font-risque block mb-2">Modbus Gateway</span>
+                    <span class="text-zinc-400 font-sans text-3xl sm:text-5xl font-semibold" data-en="TCP to RTU Bridge" data-cn="TCP 转 RTU 桥接器">TCP to RTU Bridge</span>
+                </h1>
+
+                <p class="max-w-[42rem] leading-normal text-zinc-500 sm:text-xl sm:leading-8 font-light">
+                    <span data-en="A high-performance, configurable gateway written in Go. Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts." 
+                          data-cn="使用 Go 语言编写的高性能、可配置网关。支持多个 Modbus TCP 主站无冲突地连接到单个串行 RTU 从站。">
+                        A high-performance, configurable gateway written in Go. Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts.
+                    </span>
+                </p>
+
+                <div class="flex flex-wrap items-center justify-center gap-4 mt-4">
+                    <a href="https://github.com/ffutop/modbus-gateway/releases" class="inline-flex h-11 items-center justify-center rounded-md bg-zinc-900 px-8 text-sm font-medium text-zinc-50 shadow transition-colors hover:bg-zinc-900/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950">
+                        <span data-en="Download Binary" data-cn="下载二进制文件">Download Binary</span>
+                    </a>
+                    <a href="#usage" class="inline-flex h-11 items-center justify-center rounded-md border border-zinc-200 bg-white px-8 text-sm font-medium shadow-sm transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950">
+                        <span data-en="Documentation" data-cn="查看文档">Documentation</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Architecture Diagram -->
+        <section id="architecture" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24 border-t border-zinc-100">
+            <div class="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-12">
+                <h2 class="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-4xl tracking-tight" data-en="Architecture" data-cn="架构设计">Architecture</h2>
+                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Serialized concurrency control ensures bus stability." data-cn="串行化并发控制确保总线稳定性。">
+                    Serialized concurrency control ensures bus stability.
+                </p>
+            </div>
+
+            <!-- The Schematic Diagram -->
+            <div class="flex flex-col md:flex-row items-center justify-center gap-6 py-8 select-none font-mono text-sm">
+
+                <!-- Left: TCP Clients -->
+                <div class="flex flex-col gap-3 w-full md:w-64">
+                    <div class="diagram-box border-dashed border-2 p-4 flex flex-col gap-2 bg-zinc-50/50">
+                        <div class="text-center text-zinc-400 text-xs font-sans font-semibold uppercase tracking-wider mb-1">TCP Masters</div>
+                        <div class="diagram-box p-3 text-center shadow-sm">Client 1</div>
+                        <div class="diagram-box p-3 text-center shadow-sm">Client 2</div>
+                        <div class="diagram-box p-3 text-center shadow-sm">Client 3</div>
+                    </div>
+                </div>
+
+                <!-- Arrow TCP -->
+                <div class="flex flex-col items-center text-zinc-400 gap-1">
+                    <span class="text-[10px] font-sans uppercase tracking-wider">TCP/IP</span>
+                    <i class="fa-solid fa-arrow-right hidden md:block text-xl"></i>
+                    <i class="fa-solid fa-arrow-down md:hidden text-xl"></i>
+                </div>
+
+                <!-- Center: Gateway -->
+                <div class="diagram-box-main p-8 rounded-xl shadow-2xl w-full md:w-72 text-center relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 w-full h-1 bg-zinc-700"></div>
+                    <i class="fa-solid fa-server text-4xl mb-4 text-white"></i>
+                    <h3 class="font-bold text-lg font-risque tracking-wide">Gateway</h3>
+                    <div class="mt-4 flex flex-col gap-1 opacity-80">
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Queue Buffer</span>
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Serializer</span>
+                    </div>
+                </div>
+
+                <!-- Arrow Serial -->
+                <div class="flex flex-col items-center text-zinc-400 gap-1">
+                    <span class="text-[10px] font-sans uppercase tracking-wider">RS485</span>
+                    <i class="fa-solid fa-arrow-right hidden md:block text-xl"></i>
+                    <i class="fa-solid fa-arrow-down md:hidden text-xl"></i>
+                </div>
+
+                <!-- Right: Slave -->
+                <div class="diagram-box p-6 w-full md:w-64 h-48 flex flex-col justify-center items-center text-center bg-zinc-50">
+                    <div class="w-16 h-16 border-2 border-zinc-800 rounded-full flex items-center justify-center mb-3">
+                        <i class="fa-solid fa-microchip text-2xl text-zinc-800"></i>
+                    </div>
+                    <div class="font-bold text-zinc-900">RTU Slave</div>
+                    <div class="text-xs text-zinc-500 mt-1">/dev/ttyUSB0</div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Features Grid -->
+        <section id="features" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24">
+            <div class="grid justify-center gap-4 sm:grid-cols-2 md:max-w-[64rem] md:grid-cols-3 mx-auto">
+
+                <!-- Feature Items -->
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-right-left text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Protocol Conversion" data-cn="协议转换">Protocol Conversion</h3>
+                            <p class="text-sm text-zinc-500" data-en="Seamless conversion between Modbus TCP and Modbus RTU." data-cn="实现 Modbus TCP 到 Modbus RTU 的无缝转换。">Seamless conversion between Modbus TCP and Modbus RTU.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-layer-group text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Concurrency" data-cn="并发处理">Concurrency</h3>
+                            <p class="text-sm text-zinc-500" data-en="Multiple TCP clients connecting simultaneously via serialization queue." data-cn="支持多个 TCP 客户端同时连接，通过内部队列串行化。">Multiple TCP clients supported.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-sliders text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Flexible Config" data-cn="灵活配置">Flexible Config</h3>
+                            <p class="text-sm text-zinc-500" data-en="Configure via CLI arguments or YAML files." data-cn="支持通过命令行参数和 YAML 配置文件配置。">CLI arguments or YAML files.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-plug text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="RS485 Control" data-cn="RS485 控制">RS485 Control</h3>
+                            <p class="text-sm text-zinc-500" data-en="Full support for RTS signal control." data-cn="内置对 RTS 信号控制的完整支持。">Full support for RTS signal control.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-file-lines text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Logging" data-cn="日志系统">Logging</h3>
+                            <p class="text-sm text-zinc-500" data-en="Configurable levels (debug, info, warn) and targets." data-cn="可配置的日志级别和输出目标。">Configurable levels and targets.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-link text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Auto Reconnect" data-cn="自动重连">Auto Reconnect</h3>
+                            <p class="text-sm text-zinc-500" data-en="Handles serial port disconnections and timeouts automatically." data-cn="自动处理串口断开和超时。">Handles serial port disconnections.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Usage / Install -->
+        <section id="usage" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24 bg-zinc-50/50 border-y border-zinc-200">
+            <div class="grid gap-12 md:grid-cols-2 max-w-6xl mx-auto">
+
+                <!-- Column 1: CLI -->
+                <div>
+                    <h3 class="text-2xl font-bold tracking-tight mb-6 flex items-center gap-2">
+                        <i class="fa-solid fa-terminal text-sm"></i>
+                        <span data-en="Quick Start" data-cn="快速开始">Quick Start</span>
+                    </h3>
+
+                    <div class="space-y-6">
+                        <div>
+                            <p class="text-sm font-medium text-zinc-500 mb-2" data-en="1. Build" data-cn="1. 构建">1. Build</p>
+                            <div class="bg-zinc-950 text-zinc-50 rounded-lg p-4 font-mono text-sm shadow-lg border border-zinc-800">
+                                <div class="flex items-center justify-between text-zinc-500 text-xs mb-2 select-none">
+                                    <span>bash</span>
+                                </div>
+                                <code class="block">git clone https://github.com/ffutop/modbus-gateway.git</code>
+                                <code class="block mt-1">cd modbus-gateway</code>
+                                <code class="block mt-1">go build -o modbus-gateway</code>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-medium text-zinc-500 mb-2" data-en="2. Run" data-cn="2. 运行">2. Run</p>
+                            <div class="bg-zinc-950 text-zinc-50 rounded-lg p-4 font-mono text-sm shadow-lg border border-zinc-800">
+                                <div class="text-zinc-400 text-xs mb-2 italic"># Listen on port 5020, Device /dev/ttyUSB0</div>
+                                <code class="break-all">./modbus-gateway -p /dev/ttyUSB0 -s 9600 -P 5020 -v debug</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 2: Config -->
+                <div>
+                    <h3 class="text-2xl font-bold tracking-tight mb-6 flex items-center gap-2">
+                        <i class="fa-solid fa-gear text-sm"></i>
+                        <span data-en="Configuration" data-cn="配置">Configuration</span>
+                    </h3>
+
+                    <p class="text-sm text-zinc-500 mb-4" data-en="Use config.yaml for advanced settings." data-cn="使用 config.yaml 进行高级设置。">Use <code>config.yaml</code> for advanced settings.</p>
+
+                    <div class="bg-white text-zinc-800 rounded-lg p-4 font-mono text-sm shadow-sm border border-zinc-200 h-[300px] overflow-y-auto">
+<pre><code><span class="text-zinc-400"># TCP Server</span>
+<span class="text-purple-600">tcp_address:</span> "0.0.0.0"
+<span class="text-purple-600">tcp_port:</span> 502
+<span class="text-purple-600">max_conns:</span> 32
+
+<span class="text-zinc-400"># Serial/RTU</span>
+<span class="text-purple-600">device:</span> "/dev/ttyUSB0"
+<span class="text-purple-600">baud_rate:</span> 19200
+<span class="text-purple-600">data_bits:</span> 8
+<span class="text-purple-600">parity:</span> "N"
+<span class="text-purple-600">stop_bits:</span> 1
+<span class="text-purple-600">timeout:</span> 500ms
+
+<span class="text-zinc-400"># RS485</span>
+<span class="text-purple-600">rs485:</span>
+  <span class="text-purple-600">enabled:</span> true
+  <span class="text-purple-600">delay_rts_before_send:</span> 2ms</code></pre>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-zinc-200 bg-white">
+        <div class="container max-w-screen-xl mx-auto px-4 md:px-8 py-8 md:py-12">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="font-risque text-xl">Modbus Gateway</span>
+                    <span class="text-zinc-400 text-sm">© 2025 ffutop</span>
+                </div>
+
+                <div class="flex gap-6 text-sm font-medium text-zinc-600">
+                    <a href="https://github.com/ffutop/modbus-gateway" class="hover:text-zinc-900 transition-colors">GitHub</a>
+                    <a href="https://github.com/ffutop/modbus-gateway/issues" class="hover:text-zinc-900 transition-colors">Issues</a>
+                    <a href="LICENSE" class="hover:text-zinc-900 transition-colors">BSD License</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        let currentLang = 'en';
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'cn' : 'en';
+
+            const btnText = document.getElementById('lang-btn-text');
+            btnText.textContent = currentLang === 'en' ? 'CN' : 'EN';
+
+            document.querySelectorAll('[data-en]').forEach(el => {
+                const enText = el.getAttribute('data-en');
+                const cnText = el.getAttribute('data-cn');
+
+                if (currentLang === 'en') {
+                    if (enText) el.textContent = enText;
+                } else {
+                    if (cnText) el.textContent = cnText;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
