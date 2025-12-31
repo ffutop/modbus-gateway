@@ -14,46 +14,241 @@
 </div>
 
 
-A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go. It acts as a bridge, allowing multiple Modbus TCP masters (clients) to communicate over a network with a single Modbus RTU slave (serial device).
+# Modbus Gateway
 
-## Architecture
+A high-performance, highly flexible Modbus gateway written in Go. It serves as a universal Modbus protocol converter and router, supporting **Multi-Master Multi-Slave** architectures and allowing arbitrary conversion between TCP and RTU (serial) protocols.
 
-The gateway receives concurrent requests from multiple TCP clients, places them in a queue, and then sends them serially one by one to the RTU device, ensuring that communication on the serial bus does not conflict.
+## Core Positioning
+
+- **Multi-Master Support**: Allows multiple Masters to access the same Slave simultaneously. The gateway queues and serializes requests to prevent bus conflicts.
+- **Multi-Slave Support**: By configuring multiple Gateway rules within a single instance, you can manage multiple slaves connected to different physical ports or network addresses simultaneously.
+- **Full Protocol Support**: Both Upstream (Master side) and Downstream (Slave side) can be independently configured as TCP or RTU, enabling any combination of protocol bridging.
+
+## User Scenarios
+
+The flexibility of this gateway makes it suitable for various complex industrial requirements:
+
+### Scenario 1: Typical TCP to RTU (Multi-Master, One Slave)
+
+The most common scenario: Multiple upper-level systems (SCADA, HMI) need to monitor the same traditional Modbus RTU device (e.g., power meter, thermostat) simultaneously. The gateway acts as a TCP Server receiving requests and forwarding them via serial port to the slave.
 
 ```mermaid
-%%{init: { "themeVariables": { "clusterBkg": "#ffffff", "clusterBorder": "#000066" }}}%%
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
 graph LR
+    subgraph "Masters (TCP)"
+        M1["SCADA System"]
+        M2["HMI Panel"]
+    end
+    
+    G["Gateway<br>(TCP Server -> Serial Port)"]
+    
+    subgraph "Slave (RTU)"
+        S1["Sensor Device"]
+    end
 
-subgraph "Modbus TCP Masters (Clients)"
-    TCPMaster1
-    TCPMaster2
-    TCPMaster3
-end
-
-ModbusGateway[Modbus Gateway]
-
-subgraph "Modbus RTU Slave (Serial Device)"
-    RTUSlave
-end
-
-TCPMaster1 --> ModbusGateway 
-TCPMaster2 --> ModbusGateway
-TCPMaster3 --> ModbusGateway
-
-ModbusGateway --"Serial Port<br>(e.g., /dev/ttyUSB0)"--> RTUSlave
-
-classDef darkStyle fill:#ffffff,stroke:#000066,color:#000066,stroke-width:2px
-class TCPMaster1,TCPMaster2,TCPMaster3,ModbusGateway,RTUSlave darkStyle;
+    M1 -->|TCP| G
+    M2 -->|TCP| G
+    G -->|Serial/RS485| S1
 ```
 
-## Features
+### Scenario 2: Multi-Channel Isolation (Multi-Gateway)
 
-- **Protocol Conversion**: Seamless conversion between Modbus TCP and Modbus RTU.
-- **Concurrent Handling**: Supports multiple TCP clients connecting simultaneously, with requests serialized one by one to the RTU device.
-- **Flexible Configuration**: Supports configuration via command-line arguments and YAML configuration files.
-- **RS485 Support**: Full support for RS485 communication mode, including `RTS` signal control.
-- **Robust Logging System**: Configurable logging levels (debug, info, warn, error) and output targets (console or file).
-- **Connection Management**: Automatic handling of serial port connections, disconnections, and idle timeouts.
+You can define multiple gateway configurations running in the same process. For example, if you have two RS485 serial ports connected to different device groups, you can open two TCP ports mapped to these serial ports respectively, achieving completely isolated concurrent access.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["Master A"]
+        M2["Master B"]
+    end
+
+    subgraph "Gateway Instance"
+        G1["Gateway Logic 1<br>Port 502 -> ttyUSB0"]
+        G2["Gateway Logic 2<br>Port 503 -> ttyUSB1"]
+    end
+
+    subgraph "Slaves"
+        S1["Slave Group 1"]
+        S2["Slave Group 2"]
+    end
+
+    M1 -->|Port 502| G1 --> S1
+    M2 -->|Port 503| G2 --> S2
+```
+
+### Scenario 3: RTU to TCP (Legacy Device Networking)
+
+Using the new bidirectional protocol support, you can use a legacy PLC (which only supports Serial Modbus Master) to control remote Modbus TCP devices. The gateway listens on the serial port (acting as a Slave), converts received commands into TCP requests, and sends them to the remote device.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Master (RTU)"
+        PLC["Legacy PLC"]
+    end
+
+    G["Gateway<br>(RTU Slave -> TCP Client)"]
+
+    subgraph "Slave (TCP)"
+        Remote["Smart Meter"]
+    end
+
+    PLC -->|Serial| G -->|TCP| Remote
+```
+
+### Scenario 4: Hybrid Master (TCP + RTU Master -> RTU Slave)
+
+This is one of the most powerful features of this gateway. It allows a traditional local HMI (RTU interface) and a remote SCADA system (TCP interface) to control the same underlying Modbus RTU device simultaneously.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["SCADA (TCP)"]
+        M2["Local HMI (RTU)"]
+    end
+
+    G["Gateway"]
+
+    subgraph "Slave"
+        S1["Device (RTU)"]
+    end
+
+    M1 -->|TCP| G
+    M2 -->|Serial 1| G
+    G -->|Serial 2| S1
+```
+
+### Scenario 5: Serial Multiplexer
+
+Even without network, you can use it as a "Serial Multiplexer". It allows multiple Serial Masters to share access to a single Serial Slave, solving the problem of insufficient serial ports on legacy devices.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Serial Masters"
+        M1["Master A (RTU)"]
+        M2["Master B (RTU)"]
+    end
+
+    G["Gateway"]
+
+    subgraph "Serial Slave"
+        S1["Slave Device (RTU)"]
+    end
+
+    M1 -->|Serial 1| G
+    M2 -->|Serial 2| G
+    G -->|Serial 3| S1
+```
+
+### Scenario 6: TCP Protocol Bridging & Firewall
+
+Design a bridge between two TCP networks. For instance, exposing an internal Modbus TCP device to an external network, or acting as a middleware for protocol sanitization/logging.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    M[Remote Master] -->|TCP Public| G[Gateway] -->|TCP Private| S[Local Slave]
+```
+
+## Key Features
+
+- **True Multi-Gateway Architecture**: Run multiple independent conversion logics within a single process.
+- **Smart Queuing**: Maintains independent request queues for each downstream slave, ensuring atomicity of RS485 bus communication.
+- **Flexible Configuration**: YAML-based configuration system defining clear network topologies.
+- **Deep RS485 Support**: Includes RTS signal timing control, adapting to various industrial serial converters.
 
 ## Installation
 

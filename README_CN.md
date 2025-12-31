@@ -14,46 +14,240 @@
 
 # Modbus Gateway
 
-一个使用 Go 语言编写的高性能、可配置的 Modbus TCP 到 Modbus RTU 网关。它充当一个桥梁，允许多个 Modbus TCP 主站（客户端）通过网络与单个 Modbus RTU 从站（串行设备）进行通信。
+一个使用 Go 语言编写的高性能、高灵活性的 Modbus 网关。它是一个通用的 Modbus 协议转换器与路由器，支持 **多主多从** 架构，并允许 TCP 与 RTU（串行）协议之间的任意互转。
 
-## 架构
+## 核心定位
 
-网关接收来自多个 TCP 客户端的并发请求，将它们放入一个队列中，然后以串行方式逐一发送到 RTU 设备，确保了串行总线上的通信不会发生冲突。
+- **多主支持 (Multi-Master)**: 允许多个主站（Master）同时访问同一个从站（Slave），网关会自动对请求进行排队和串行化，防止总线冲突。
+- **多从支持 (Multi-Slave)**: 通过在一个实例中配置多个网关规则（Gateways），可以同时管理连接在不同物理端口或网络地址上的多个从站。
+- **全协议支持**: 上游（Master端）和下游（Slave端）均可独立配置为 TCP 或 RTU 模式，实现任意组合的协议桥接。
+
+## 用户场景
+
+本网关的灵活性使其适用于多种复杂的工业现场需求：
+
+### 场景 1: 典型 TCP 转 RTU (多主一从)
+
+最常见的场景：多个上位机（SCADA, HMI）需要同时监控同一台传统的 Modbus RTU 设备（如电表、温控器）。网关作为 TCP 服务器接收请求，并通过串口转发给从站。
 
 ```mermaid
-%%{init: { "themeVariables": { "clusterBkg": "#ffffff", "clusterBorder": "#000066" }}}%%
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
 graph LR
+    subgraph "Masters (TCP)"
+        M1["SCADA System"]
+        M2["HMI Panel"]
+    end
+    
+    G["Gateway<br>(TCP Server -> Serial Port)"]
+    
+    subgraph "Slave (RTU)"
+        S1["Sensor Device"]
+    end
 
-subgraph "Modbus TCP Masters (Clients)"
-    ModbusMaster1
-    ModbusMaster2
-    ModbusMaster3
-end
+    M1 -->|TCP| G
+    M2 -->|TCP| G
+    G -->|Serial/RS485| S1
+```
 
-ModbusGateway[Modbus Gateway]
+### 场景 2: 多通道隔离 (多主多从)
 
-subgraph "Modbus RTU Slave (Serial Device)"
-    ModbusSlave
-end
+您可以定义多个网关配置运行在同一个进程中。例如，您有两个 RS485 串口，分别连接了不同的设备群。您可以开启两个 TCP 端口，分别映射到这两个串口，实现完全隔离的并发访问。
 
-ModbusMaster1 --> ModbusGateway 
-ModbusMaster2 --> ModbusGateway
-ModbusMaster3 --> ModbusGateway
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["Master A"]
+        M2["Master B"]
+    end
 
-ModbusGateway --"Serial Port<br>(e.g., /dev/ttyUSB0)"--> ModbusSlave
+    subgraph "Gateway Instance"
+        G1["Gateway Logic 1<br>Port 502 -> ttyUSB0"]
+        G2["Gateway Logic 2<br>Port 503 -> ttyUSB1"]
+    end
 
-classDef darkStyle fill:#ffffff,stroke:#000066,color:#000066,stroke-width:2px
-class ModbusMaster1,ModbusMaster2,ModbusMaster3,ModbusGateway,ModbusSlave darkStyle;
+    subgraph "Slaves"
+        S1["Slave Group 1"]
+        S2["Slave Group 2"]
+    end
+
+    M1 -->|Port 502| G1 --> S1
+    M2 -->|Port 503| G2 --> S2
+```
+
+### 场景 3: RTU 转 TCP (旧设备联网)
+
+利用新的双向协议支持，您可以用传统的 PLC（仅支持串口 Modbus Master）去控制远程的 Modbus TCP 设备。网关监听串口（作为从站），将收到的指令转换为 TCP 请求发送给远程设备。
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Master (RTU)"
+        PLC[Legacy PLC]
+    end
+
+    G["Gateway<br>(RTU Slave -> TCP Client)"]
+
+    subgraph "Slave (TCP)"
+        Remote[Smart Meter]
+    end
+
+    PLC -->|Serial| G -->|TCP| Remote
+```
+
+### 场景 4: 混合协议主站 (TCP + RTU Master -> RTU Slave)
+
+这是本网关最强大的功能之一。它允许传统的本地 HMI（RTU 接口）和远程的 SCADA 系统（TCP 接口）同时控制同一个底层的 Modbus RTU 设备。
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["SCADA (TCP)"]
+        M2["Local HMI (RTU)"]
+    end
+
+    G["Gateway"]
+
+    subgraph "Slave"
+        S1["Device (RTU)"]
+    end
+
+    M1 -->|TCP| G
+    M2 -->|Serial 1| G
+    G -->|Serial 2| S1
+```
+
+### 场景 5: 纯串口复用 (Serial Multiplexer)
+
+即使没有网络，您也可以将其作为“串口复用器”使用。允许多个串口主站（Master）共享访问一个串口从站（Slave），解决传统设备串口数量不足的问题。
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Serial Masters"
+        M1["Master A (RTU)"]
+        M2["Master B (RTU)"]
+    end
+
+    G["Gateway"]
+
+    subgraph "Serial Slave"
+        S1["Slave Device (RTU)"]
+    end
+
+    M1 -->|Serial 1| G
+    M2 -->|Serial 2| G
+    G -->|Serial 3| S1
+```
+
+### 场景 6: TCP 协议桥接与防火墙
+
+在两个 TCP 网络之间建立桥梁。例如，将内网的 Modbus TCP 设备暴露给外网，或者作为协议清洗/日志记录的中间件。
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    M[Remote Master] -->|TCP Public| G[Gateway] -->|TCP Private| S[Local Slave]
 ```
 
 ## 主要特性
 
-*   **协议转换**: 实现 Modbus TCP 到 Modbus RTU 的无缝转换。
-*   **并发处理**: 支持多个 TCP 客户端同时连接，通过内部队列将并发请求串行化。
-*   **灵活配置**: 支持通过命令行参数和 YAML 配置文件进行灵活配置。
-*   **RS485 支持**: 内置对 RS485 通信模式的完整支持，包括 `RTS` 信号控制。
-*   **健壮的日志系统**: 可配置的日志级别（debug, info, warn, error）和日志输出目标（文件或控制台）。
-*   **连接管理**: 自动处理串口的连接、断开和空闲超时。
+- **真正的多网关架构**: 单进程内运行多个独立的转换逻辑。
+- **智能队列**: 为每个下游从站维护独立的请求队列，确保 RS485 总线通讯的原子性。
+- **配置热加载**: (TODO) 支持动态更新配置。
+- **灵活配置**: 基于 YAML 的配置体系，清晰定义网络拓扑。
+- **RS485 深度支持**: 包含 RTS 信号时序控制，适应各种工业串口转接器。
 
 ## 安装
 
