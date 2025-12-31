@@ -71,85 +71,59 @@ go build -o modbus-gateway
 After the build process is complete, you will find the `modbus-gateway` executable file in the project root directory.
 
 ## Usage
-
-You can start the gateway directly via command-line arguments.
-
-### Command-line Example
-
-Connect to the serial device located at `/dev/ttyUSB0` with a baud rate of `9600` and listen for TCP connections on port `5020` locally:
-
-```bash
-./modbus-gateway -p /dev/ttyUSB0 -s 9600 -P 5020 -v debug
-```
-
-### Command-line Parameters
-
-Run `./modbus-gateway --help` to view all available parameters:
-
-```text
-Usage of ./modbus-gateway:
-  -A, --tcp_address string   TCP server address to bind. (default "0.0.0.0")
-  -C, --max_conns int        Maximum number of simultaneous TCP connections. (default 32)
-  -L, --log_file string      Log file name ('-' for logging to STDOUT only).
-  -P, --tcp_port int         TCP server port number. (default 502)
-  -R, --rqst_pause int       Pause between requests in milliseconds. (default 100)
-  -W, --timeout int          Response wait time in milliseconds. (default 500)
-  -c, --config string        Configuration file path.
-  -p, --device string        Serial port device name. (default "/tmp/pts1")
-  -s, --baud_rate int        Serial port speed. (default 19200)
-  -v, --log_level string     Log verbosity level (debug, info, warn, error). (default "info")
-```
-
-### Configuration
-
-The gateway's configuration loading follows the following priority order: **Command-line Parameters > Configuration File > Default Values**.
-
-### Configuration File
-
-You can use a YAML file to centrally manage all configurations. Specify the configuration file path using the `-c` or `--config` parameter.
-
-### Default Values
-
-If no configuration file is specified, the gateway will use the default values as defined in the code.
-
-*   `/etc/modbusgw/`
-*   `$HOME/.modbusgw/`
-*   `./` (current working directory)
-
-#### Example `config.yaml`
-
-Replace this with the following content:
-
-
-```yaml
-# TCP Server Configuration
-tcp_address: "0.0.0.0"
-tcp_port: 502
-max_conns: 32
-
-# Serial/RTU Configuration
-device: "/dev/ttyUSB0" # Serial port device name, e.g., "/dev/ttyUSB0" on Linux or "COM3" on Windows
-baud_rate: 19200
-data_bits: 8
-parity: "N" # Parity bit (N: None, E: Even, O: Odd)
-stop_bits: 1
-timeout: 500ms      # RTU response timeout, supports units: ns, us, ms, s, m, h
-rqst_pause: 100ms   # Pause between requests in milliseconds
-
-# Serial/RTU RS485 Configuration (Only configure if needed)
-rs485:
-  enabled: true
-  delay_rts_before_send: 2ms
-  delay_rts_after_send: 2ms
-  rts_high_during_send: true
-  rts_high_after_send: false
-  rx_during_tx: false
-
-# Logging Configuration
-log_level: "info" # Log verbosity level (debug, info, warn, error)
-log_file: ""      # Log file path, '-' for logging to STDOUT only
-
-```
+ 
+The program is driven by a configuration file. You can start multiple gateway instances.
+ 
+### Start
+ 
+Use the `-config` flag to specify the configuration file path:
+ 
+ ```bash
+ ./modbus-gateway -config config.yaml
+ ```
+ 
+ ## Configuration
+ 
+ ### Configuration Structure
+ 
+ The configuration file supports defining multiple gateways (`gateways`). Each gateway can have multiple upstream masters (`upstreams`) and one downstream slave (`downstream`).
+ 
+ #### Example `config.yaml`
+ 
+ ```yaml
+ gateways:
+   - name: "gateway-1"
+     # Upstream: Who connects to the gateway (Modbus Masters)
+     upstreams:
+       - type: "tcp"
+         tcp:
+           address: "0.0.0.0:502"
+     # Downstream: Who the gateway connects to (Modbus Slave)
+     downstream:
+       type: "rtu"
+       serial:
+         device: "/dev/ttyUSB0"
+         baud_rate: 19200
+         data_bits: 8
+         parity: "N"
+         stop_bits: 1
+         timeout: "500ms"
+ 
+   # Example: Another gateway instance, TCP to TCP bridge
+   - name: "gateway-tcp-bridge"
+     upstreams:
+       - type: "tcp"
+         tcp:
+           address: "0.0.0.0:503"
+     downstream:
+       type: "tcp"
+       tcp:
+         address: "192.168.1.100:502"
+ 
+ log:
+   level: "info" # debug, info, warn, error
+   file: ""      # empty for stdout
+ ```
 
 ## Development and Testing
 

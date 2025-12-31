@@ -71,14 +71,38 @@ func TestMain(m *testing.M) {
 	defer rtuServer.Close()
 	log.Printf("Modbus RTU 从站已在 %s 上启动。", pts1)
 
+	// Create temporary config file
+	configContent := fmt.Sprintf(`
+gateways:
+  - name: "test-gateway"
+    upstreams:
+      - type: "tcp"
+        tcp:
+          address: "0.0.0.0:%d"
+    downstream:
+      type: "rtu"
+      serial:
+        device: "%s"
+        baud_rate: 19200
+        data_bits: 8
+        parity: "N"
+        stop_bits: 1
+        timeout: "1s"
+log:
+  level: "debug"
+`, gatewayTCPPort, pts0)
+
+	configFile := filepath.Join(cwd, "test_config.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		log.Fatalf("failed to write config file: %v", err)
+	}
+	defer os.Remove(configFile)
+
 	var gatewayCmd *exec.Cmd
 	go func() {
 		// 启动 modbus-gateway
 		gatewayCmd = exec.Command(gatewayBinaryPath,
-			"-s19200",
-			"-p"+pts0,
-			"-vdebug",
-			fmt.Sprintf("-P%d", gatewayTCPPort), // TCP 端口
+			"-config", configFile,
 		)
 		// 将子进程的标准输出和标准错误重定向到当前测试进程的输出
 		gatewayCmd.Stdout = os.Stdout
@@ -87,7 +111,7 @@ func TestMain(m *testing.M) {
 		if err := gatewayCmd.Start(); err != nil {
 			log.Fatalf("启动 modbus-gateway 失败: %v", err)
 		}
-		log.Printf("modbus-gateway 进程已启动 (PID: %d)，连接到 %s，监听 TCP 端口 %d。", gatewayCmd.Process.Pid, pts0, gatewayTCPPort)
+		log.Printf("modbus-gateway 进程已启动 (PID: %d)，使用配置文件 %s", gatewayCmd.Process.Pid, configFile)
 	}()
 
 	// 等待网关完全启动

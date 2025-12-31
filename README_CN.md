@@ -71,81 +71,59 @@ go build
 执行完毕后，您将在项目根目录下找到名为 `modbus-gateway` 的可执行文件。
 
 ## 使用方法
-
-您可以直接通过命令行参数启动网关。
-
-### 命令行示例
-
-连接到位于 `/dev/ttyUSB0` 的串口设备，波特率为 `9600`，并在本地 `5020` 端口上监听 TCP 连接：
-
-```bash
-./modbus-gateway -p /dev/ttyUSB0 -s 9600 -P 5020 -v debug
-```
-
-### 命令行参数
-
-运行 `./modbus-gateway --help` 查看所有可用参数：
-
-```text
-Usage of ./modbus-gateway:
-  -A, --tcp_address string   TCP server address to bind. (default "0.0.0.0")
-  -C, --max_conns int        Maximum number of simultaneous TCP connections. (default 32)
-  -L, --log_file string      Log file name ('-' for logging to STDOUT only).
-  -P, --tcp_port int         TCP server port number. (default 502)
-  -R, --rqst_pause int       Pause between requests in milliseconds. (default 100)
-  -W, --timeout int          Response wait time in milliseconds. (default 500)
-  -c, --config string        Configuration file path.
-  -p, --device string        Serial port device name. (default "/tmp/pts1")
-  -s, --baud_rate int        Serial port speed. (default 19200)
-  -v, --log_level string     Log verbosity level (debug, info, warn, error). (default "info")
-```
-
-## 配置
-
-网关的配置加载遵循以下优先级顺序： **命令行参数 > 配置文件 > 默认值**。
-
-### 配置文件
-
-您可以使用 YAML 文件来集中管理所有配置。通过 `-c` 或 `--config` 参数指定配置文件路径。
-
-如果未指定配置文件路径，程序会依次在以下位置查找 `config.yaml`：
-*   `/etc/modbusgw/`
-*   `$HOME/.modbusgw/`
-*   `./` (当前工作目录)
-
-#### 示例 `config.yaml`
-
-这是一个包含所有可配置项的示例文件。您可以根据需要进行删减。
-
-```yaml
-# TCP Server 配置
-tcp_address: "0.0.0.0"
-tcp_port: 502
-max_conns: 32
-
-# Serial/RTU 配置
-device: "/dev/ttyUSB0" # 串口设备, e.g., "/dev/ttyUSB0" on Linux or "COM3" on Windows
-baud_rate: 19200
-data_bits: 8
-parity: "N" # 校验位 (N: None, E: Even, O: Odd)
-stop_bits: 1
-timeout: 500ms      # RTU 响应超时, 支持单位: ns, us, ms, s, m, h
-rqst_pause: 100ms   # 两个请求之间的间隔
-
-# Serial/RTU RS485 配置 (仅在需要时配置)
-rs485:
-  enabled: true
-  delay_rts_before_send: 2ms
-  delay_rts_after_send: 2ms
-  rts_high_during_send: true
-  rts_high_after_send: false
-  rx_during_tx: false
-
-# 网关通用配置
-log_level: "info" # 日志级别 (debug, info, warn, error)
-log_file: ""      # 日志文件路径, 为空或'-'表示输出到控制台
-
-```
+ 
+本程序通过配置文件驱动。您可以启动多个网关实例。
+ 
+### 启动
+ 
+使用 `-config` 参数指定配置文件路径：
+ 
+ ```bash
+ ./modbus-gateway -config config.yaml
+ ```
+ 
+ ## 配置
+ 
+### 配置文件结构
+ 
+配置文件支持定义多个网关 (`gateways`)。每个网关可以有多个上游主站 (`upstreams`) 和一个下游从站 (`downstream`)。
+ 
+ #### 示例 `config.yaml`
+ 
+ ```yaml
+ gateways:
+   - name: "gateway-1"
+     # 上游: 谁连接到网关 (Modbus Masters)
+     upstreams:
+       - type: "tcp"
+         tcp:
+           address: "0.0.0.0:502"
+     # 下游: 网关连接到谁 (Modbus Slave)
+     downstream:
+       type: "rtu"
+       serial:
+         device: "/dev/ttyUSB0"
+         baud_rate: 19200
+         data_bits: 8
+         parity: "N"
+         stop_bits: 1
+         timeout: "500ms"
+ 
+   # 示例: 另一个网关实例，TCP 转 TCP
+   - name: "gateway-tcp-bridge"
+     upstreams:
+       - type: "tcp"
+         tcp:
+           address: "0.0.0.0:503"
+     downstream:
+       type: "tcp"
+       tcp:
+         address: "192.168.1.100:502"
+ 
+ log:
+   level: "info" # debug, info, warn, error
+   file: ""      # 为空输出到控制台
+ ```
 
 ## 开发与测试
 

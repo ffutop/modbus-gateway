@@ -1,0 +1,18 @@
+
+gateways:
+  - name: "test-gateway"
+    upstreams:
+      - type: "tcp"
+        tcp:
+          address: "0.0.0.0:33502"
+    downstream:
+      type: "rtu"
+      serial:
+        device: "/tmp/pts0"
+        baud_rate: 19200
+        data_bits: 8
+        parity: "N"
+        stop_bits: 1
+        timeout: "1s"
+log:
+  level: "debug"

@@ -1,44 +1,135 @@
+// Copyright (c) 2025 Li Jinling. All rights reserved.
+// This software may be modified and distributed under the terms
+// of the BSD-3 Clause License. See the LICENSE file for details.
+
 package main
 
 import (
+	"context"
+	"flag"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+
+	"github.com/ffutop/modbus-gateway/internal/config"
+	"github.com/ffutop/modbus-gateway/internal/gateway"
+	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/transport/rtu"
+	"github.com/ffutop/modbus-gateway/transport/tcp"
 )
 
-var logLevelMap = map[string]slog.Level{
-	"debug": slog.LevelDebug,
-	"info":  slog.LevelInfo,
-	"warn":  slog.LevelWarn,
-	"error": slog.LevelError,
+func main() {
+	configFile := flag.String("config", "", "Path to config file")
+	flag.Parse()
+
+	// 1. Load Configuration
+	cfg, err := config.LoadConfig(*configFile)
+	if err != nil {
+		fmt.Printf("Failed to load configuration: %v\n", err)
+		// For backward compatibility or ease of use, if no config found, maybe we should warn?
+		// But LoadConfig already handled defaulting/erroring logic.
+		os.Exit(1)
+	}
+
+	// Setup Logger
+	setupLogger(cfg.Log)
+
+	slog.Info("Starting Modbus Gateway...")
+
+	// 2. Create Gateways
+	var gateways []*gateway.Gateway
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for _, gwCfg := range cfg.Gateways {
+		// Create Downstream
+		var ds transport.Downstream
+		switch gwCfg.Downstream.Type {
+		case "tcp":
+			ds = tcp.NewClient(gwCfg.Downstream.Tcp.Address)
+		case "rtu":
+			ds = rtu.NewClient(gwCfg.Downstream.Serial)
+		default:
+			slog.Error("Unknown downstream type", "type", gwCfg.Downstream.Type, "gateway", gwCfg.Name)
+			continue
+		}
+
+		// Create Upstreams
+		var upstreams []transport.Upstream
+		for _, usCfg := range gwCfg.Upstreams {
+			var us transport.Upstream
+			switch usCfg.Type {
+			case "tcp":
+				us = tcp.NewServer(usCfg.Tcp.Address)
+			case "rtu":
+				us = rtu.NewServer(usCfg.Serial)
+			default:
+				slog.Error("Unknown upstream type", "type", usCfg.Type, "gateway", gwCfg.Name)
+				continue
+			}
+			upstreams = append(upstreams, us)
+		}
+
+		gw := gateway.NewGateway(gwCfg, upstreams, ds)
+		gateways = append(gateways, gw)
+	}
+
+	if len(gateways) == 0 {
+		slog.Error("No valid gateways configured. Exiting.")
+		os.Exit(1)
+	}
+
+	// 3. Start Gateways
+	var wg sync.WaitGroup
+	for _, gw := range gateways {
+		wg.Add(1)
+		go func(g *gateway.Gateway) {
+			defer wg.Done()
+			if err := g.Start(ctx); err != nil {
+				slog.Error("Gateway stopped with error", "name", g.Name, "err", err)
+			}
+		}(gw)
+	}
+
+	// 4. Wait for Signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	slog.Info("Shutting down...")
+	cancel()
+	wg.Wait()
+	slog.Info("Goodbye.")
 }
 
-func main() {
-	// Load configuration from command line and config file
-	config, err := LoadConfig()
-	if err != nil {
-		slog.Error("load config failed", "err", err)
+func setupLogger(cfg config.LogConfig) {
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+	switch cfg.Level {
+	case "debug":
+		opts.Level = slog.LevelDebug
+	case "warn":
+		opts.Level = slog.LevelWarn
+	case "error":
+		opts.Level = slog.LevelError
 	}
 
-	// Set json log handler
-	level := logLevelMap[config.LogLevel]
-	writer := os.Stdout
-	if config.LogFile != "" {
-		writer, err = os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	var handler slog.Handler
+	if cfg.File != "" && cfg.File != "-" {
+		f, err := os.OpenFile(cfg.File, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			slog.Error("open log file failed", "err", err)
+			fmt.Printf("Failed to open log file, falling back to stdout: %v\n", err)
+			handler = slog.NewTextHandler(os.Stdout, opts)
+		} else {
+			handler = slog.NewTextHandler(f, opts)
 		}
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
-	handler := slog.NewJSONHandler(writer, &slog.HandlerOptions{
-		Level:     level,
-		AddSource: level <= slog.LevelDebug,
-	})
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
-
-	// Create and run gateway
-	gateway := NewGateway(config)
-	err = gateway.Run()
-	if err != nil {
-		slog.Error("gateway run failed", "err", err)
-	}
+	slog.SetDefault(slog.New(handler))
 }
