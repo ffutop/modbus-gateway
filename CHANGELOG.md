@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support for multiple gateway instances: Run multiple independent gateway conversion logics within a single process. Allows defining multiple gateway rules (Gateways) via configuration files to manage isolation and forwarding for multiple physical serial ports or TCP ports simultaneously, supporting the construction of complex "multi-master, multi-slave" network topologies.
 
 ### Changed
 

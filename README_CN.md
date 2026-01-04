@@ -241,6 +241,89 @@ graph LR
     M[Remote Master] -->|TCP Public| G[Gateway] -->|TCP Private| S[Local Slave]
 ```
 
+### 场景 7: 一主多从 (RS485 总线级联)
+
+这是 Modbus RTU 的标准拓扑。网关支持透明传输，您可以在单个串口（下游）上挂载多台从站设备（如 ID 1, ID 2, ID 3...）。TCP 主站只需指定目标 Slave ID，网关即可将请求发送至总线，相应的设备会自动响应。
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Master"
+        M["TCP Client"]
+    end
+    
+    G["Gateway"]
+    
+    subgraph "RS485 Bus"
+        S1["Slave ID 1"]
+        S2["Slave ID 2"]
+        S3["Slave ID 3"]
+    end
+
+    M -->|TCP| G -->|Serial| S1
+    S1 --- S2 --- S3
+```
+
+### 场景 8: 集中式多总线管理 (多主多从)
+
+在大型系统中，您可能拥有多个 RS485 网络（例如：楼层 1 总线、楼层 2 总线）。您可以在同一台网关服务器上配置多个转发规则，将不同的 TCP 端口映射到不同的物理串口。所有上位机（Masters）可以通过连接不同的端口来访问对应的总线网络，实现集中化管理。
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["SCADA A"]
+        M2["SCADA B"]
+    end
+
+    subgraph "Gateway Server"
+        P1["Port 502"]
+        P2["Port 503"]
+    end
+
+    subgraph "Field Buses"
+        B1["Bus 1 (Floor 1)"]
+        B2["Bus 2 (Floor 2)"]
+    end
+
+    M1 --> P1
+    M1 --> P2
+    M2 --> P1
+    M2 --> P2
+    P1 -->|/dev/ttyUSB0| B1
+    P2 -->|/dev/ttyUSB1| B2
+```
+
 ## 主要特性
 
 - **真正的多网关架构**: 单进程内运行多个独立的转换逻辑。

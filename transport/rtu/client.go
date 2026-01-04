@@ -97,28 +97,11 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 		return modbus.ProtocolDataUnit{}, err
 	}
 
-	// 3. Decode Response ADU to PDU
-	// respBytes should be valid ADU (checked by lower layer readIncrementally/CRC check usually,
-	// but let's see. The readIncrementally function does NOT check CRC, it just reads.
-	// The Send function (which we call) calls readIncrementally.
-	// We should probably check CRC if we were rewriting the lower layer, but let's assume `readIncrementally` does basic read.
-	// Wait, standard modbus lib `Send` usually verifies CRC.
-	// Let's check `rtuSerialTransporter.Send`. It does not explicitly check CRC?
-	// Ah, I see `readIncrementally` logic...
-
-	// Actually, `rtuSerialTransporter.Send` returns raw bytes.
-	// We must parse it back to PDU.
-
-	// Re-verify CRC of response?
-	// Logic in `rtuSerialTransporter.Send` (below) seems to just return data.
-
-	// Let's verify CRC here.
+	// 3. Check CRC
 	respLen := len(respBytes)
 	if respLen < rtuMinSize {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("response too short")
 	}
-
-	// Check CRC
 	c.Reset().PushBytes(respBytes[0 : respLen-2])
 	if checksum := uint16(respBytes[respLen-1])<<8 | uint16(respBytes[respLen-2]); checksum != c.Value() {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("modbus: response crc '%v' does not match expected '%v'", checksum, c.Value())

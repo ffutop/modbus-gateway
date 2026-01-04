@@ -17,6 +17,9 @@ import (
 	"github.com/ffutop/modbus-gateway/modbus"
 )
 
+// TODO:
+// 1. 考虑保持长连接（以及断线重连，心跳策略，连接重试等）
+
 const (
 	tcpTimeout = 10 * time.Second
 )

@@ -243,6 +243,89 @@ graph LR
     M[Remote Master] -->|TCP Public| G[Gateway] -->|TCP Private| S[Local Slave]
 ```
 
+### Scenario 7: One Master Multi-Slave (RS485 Bus Daisychain)
+
+This is the standard topology for Modbus RTU. The gateway supports transparent transmission, allowing you to mount multiple slave devices (e.g., ID 1, ID 2, ID 3...) on a single serial port (downstream). The TCP Master only needs to specify the target Slave ID, and the gateway will send the request to the bus, where the corresponding device will respond automatically.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Master"
+        M["TCP Client"]
+    end
+    
+    G["Gateway"]
+    
+    subgraph "RS485 Bus"
+        S1["Slave ID 1"]
+        S2["Slave ID 2"]
+        S3["Slave ID 3"]
+    end
+
+    M -->|TCP| G -->|Serial| S1
+    S1 --- S2 --- S3
+```
+
+### Scenario 8: Centralized Bus Management (Multi-Master Multi-Slave)
+
+In large-scale systems, you might have multiple RS485 networks (e.g., Floor 1 Bus, Floor 2 Bus). You can configure multiple forwarding rules on a single gateway server, mapping different TCP ports to different physical serial ports. All upper-level systems (Masters) can access the corresponding bus networks by connecting to different ports, achieving centralized management.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["SCADA A"]
+        M2["SCADA B"]
+    end
+
+    subgraph "Gateway Server"
+        P1["Port 502"]
+        P2["Port 503"]
+    end
+
+    subgraph "Field Buses"
+        B1["Bus 1 (Floor 1)"]
+        B2["Bus 2 (Floor 2)"]
+    end
+
+    M1 --> P1
+    M1 --> P2
+    M2 --> P1
+    M2 --> P2
+    P1 -->|/dev/ttyUSB0| B1
+    P2 -->|/dev/ttyUSB1| B2
+```
+
 ## Key Features
 
 - **True Multi-Gateway Architecture**: Run multiple independent conversion logics within a single process.

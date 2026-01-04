@@ -1,25 +1,17 @@
-# TCP Server Configuration
-tcp_address: "0.0.0.0"
-tcp_port: 502
-max_conns: 32
-
-# Serial/RTU Configuration
-device: "/dev/ttyUSB0" # Serial port device name, e.g., "/dev/ttyUSB0" on Linux or "COM3" on Windows
-baud_rate: 19200
-data_bits: 8
-parity: "N" # Parity bit (N: None, E: Even, O: Odd)
-stop_bits: 1
-timeout: 500ms      # RTU response timeout, supports units: ns, us, ms, s, m, h
-rqst_pause: 100ms   # Pause between requests in milliseconds
-
-# Serial/RTU RS485 Configuration (Only configure if needed)
-rs485: false
-delay_rts_before_send: 2ms
-delay_rts_after_send: 2ms
-rts_high_during_send: true
-rts_high_after_send: false
-rx_during_tx: false
-
-# Logging Configuration
-log_level: "info" # Log verbosity level (debug, info, warn, error)
-log_file: ""      # Log file path, '-' for logging to STDOUT only
+gateways:
+  - name: "test-gateway"
+    upstreams:
+      - type: "tcp"
+        tcp:
+          address: "0.0.0.0:33502"
+    downstream:
+      type: "rtu"
+      serial:
+        device: "/tmp/pts0"
+        baud_rate: 19200
+        data_bits: 8
+        parity: "N"
+        stop_bits: 1
+        timeout: "1s"
+log:
+  level: "debug"
