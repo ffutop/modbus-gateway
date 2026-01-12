@@ -25,21 +25,18 @@ func main() {
 	configFile := flag.String("config", "", "Path to config file")
 	flag.Parse()
 
-	// 1. Load Configuration
+	// Load Configuration
 	cfg, err := config.LoadConfig(*configFile)
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v\n", err)
-		// For backward compatibility or ease of use, if no config found, maybe we should warn?
-		// But LoadConfig already handled defaulting/erroring logic.
 		os.Exit(1)
 	}
 
-	// Setup Logger
 	setupLogger(cfg.Log)
 
 	slog.Info("Starting Modbus Gateway...")
 
-	// 2. Create Gateways
+	// Create Gateways
 	var gateways []*gateway.Gateway
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -83,7 +80,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. Start Gateways
+	// Start Gateways
 	var wg sync.WaitGroup
 	for _, gw := range gateways {
 		wg.Add(1)
@@ -95,7 +92,7 @@ func main() {
 		}(gw)
 	}
 
-	// 4. Wait for Signal
+	// Wait for Signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan

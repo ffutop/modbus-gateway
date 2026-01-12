@@ -70,11 +70,8 @@ func NewClient(cfg config.SerialConfig) *Client {
 
 // Send sends a PDU to the Downstream Slave
 func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
-	// 1. Wrap PDU into RTU ADU
-	// Start with PDU content... wait, RTU ADU is: SlaveID + PDU + CRC.
-	// We need to calculate CRC.
-
-	length := len(pdu.Data) + 4 // SlaveID(1) + Func(1) + Data + CRC(2)
+	// Wrap PDU into RTU ADU: SlaveID(1) + Func(1) + Data + CRC(2)
+	length := len(pdu.Data) + 4
 	if length > rtuMaxSize {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("modbus: length of data '%v' must not be bigger than '%v'", length, rtuMaxSize)
 	}
@@ -84,20 +81,20 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 	aduBytes[1] = pdu.FunctionCode
 	copy(aduBytes[2:], pdu.Data)
 
-	// CRC
+	// Calculate CRC
 	var c crc.CRC
 	c.Reset().PushBytes(aduBytes[0 : length-2])
 	checksum := c.Value()
 	aduBytes[length-1] = byte(checksum >> 8)
 	aduBytes[length-2] = byte(checksum)
 
-	// 2. Send via Serial
+	// Send via Serial
 	respBytes, err := mb.rtuSerialTransporter.Send(ctx, aduBytes)
 	if err != nil {
 		return modbus.ProtocolDataUnit{}, err
 	}
 
-	// 3. Check CRC
+	// Check CRC
 	respLen := len(respBytes)
 	if respLen < rtuMinSize {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("response too short")
@@ -119,7 +116,6 @@ type rtuSerialTransporter struct {
 	serialPort
 }
 
-// InvalidLengthError... (same as before)
 type InvalidLengthError struct {
 	length byte
 }
@@ -133,7 +129,7 @@ func readIncrementally(slaveID, functionCode byte, r io.Reader, deadline time.Ti
 	if r == nil {
 		return nil, fmt.Errorf("reader is nil")
 	}
-	// ... (content same as original, just keeping it here)
+
 	buf := make([]byte, 1)
 	data := make([]byte, rtuMaxSize)
 

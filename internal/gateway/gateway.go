@@ -22,10 +22,8 @@ type Gateway struct {
 	Upstreams  []transport.Upstream
 	Downstream transport.Downstream
 
-	// reqQueue is not effectively used if we use a mutex for direct dispatch.
-	// For simplicity and immediate response, we use direct dispatch with Mutex.
-	// Queuing can be added if we want to decouple reception from processing,
-	// but Modbus TCP expects a response within a timeout, so excessive queuing might confuse the master.
+	// Use direct dispatch with Mutex for simplicity and low latency.
+	// Queuing could be added later if decoupling is needed.
 	mu sync.Mutex // Mutex enables safe access to the Downstream serial port
 }
 
@@ -40,13 +38,13 @@ func NewGateway(cfg config.GatewayConfig, upstreams []transport.Upstream, downst
 
 // Start starts all upstream servers and the downstream connection
 func (g *Gateway) Start(ctx context.Context) error {
-	// 1. Connect Downstream
+	// Connect Downstream
 	if err := g.Downstream.Connect(ctx); err != nil {
 		slog.Error("Failed to connect downstream", "gateway", g.Name, "err", err)
 		// We might continue even if downstream fails initially, it might recover
 	}
 
-	// 2. Start Upstreams
+	// Start Upstreams
 	var wg sync.WaitGroup
 	for i, us := range g.Upstreams {
 		wg.Add(1)

@@ -21,7 +21,7 @@ import (
 // It acts as a Slave on the serial bus, waiting for requests from an external Master.
 type Server struct {
 	Config config.SerialConfig
-	Serial serialPort // Interface for testing? Or just concrete type. Using rtuSerialTransporter pattern might be better.
+	Serial serialPort
 }
 
 // NewServer creates a new RTU Server.
@@ -33,7 +33,6 @@ func NewServer(cfg config.SerialConfig) *Server {
 
 // Start starts the RTU server.
 func (s *Server) Start(ctx context.Context, handler transport.RequestHandler) error {
-	// 1. Open Serial Port
 	spConfig := &serial.Config{
 		Address:  s.Config.Device,
 		BaudRate: s.Config.BaudRate,
@@ -50,13 +49,11 @@ func (s *Server) Start(ctx context.Context, handler transport.RequestHandler) er
 	defer port.Close()
 	slog.Info("RTU Server listening", "device", s.Config.Device)
 
-	// handle close
 	go func() {
 		<-ctx.Done()
 		port.Close()
 	}()
 
-	// 2. Loop
 	return s.scanLoop(ctx, port, handler)
 }
 
@@ -104,7 +101,6 @@ func (s *Server) scanLoop(ctx context.Context, port io.ReadWriteCloser, handler 
 		// Determine expected length
 		expectedLen, err := calculateRequestLength(functionCode, buf[:current])
 		if err != nil {
-			// slog.Debug("Invalid request or partial read", "err", err)
 			continue
 		}
 

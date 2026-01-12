@@ -6,11 +6,13 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 
+	"github.com/ffutop/modbus-gateway/modbus"
 	"github.com/ffutop/modbus-gateway/transport"
 )
 
@@ -111,8 +113,18 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		respPdu, err := s.Handler(ctx, adu.SlaveID, adu.Pdu)
 		if err != nil {
 			slog.Error("Handler failed", "err", err)
-			// TODO: Send exception response?
-			continue
+
+			// Map error to Modbus exception code
+			exceptionCode := modbus.ExceptionCodeServerDeviceFailure
+			if errors.Is(err, context.DeadlineExceeded) || err.Error() == "modbus: request timed out" {
+				exceptionCode = modbus.ExceptionCodeGatewayTargetDeviceFailedToRespond
+			}
+
+			// Construct Exception PDU: Function Code | 0x80
+			respPdu = modbus.ProtocolDataUnit{
+				FunctionCode: adu.Pdu.FunctionCode | 0x80,
+				Data:         []byte{byte(exceptionCode)},
+			}
 		}
 
 		// Construct Response ADU

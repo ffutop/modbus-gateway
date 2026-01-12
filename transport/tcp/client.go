@@ -18,7 +18,7 @@ import (
 )
 
 // TODO:
-// 1. 考虑保持长连接（以及断线重连，心跳策略，连接重试等）
+// Consider maintaining persistent connections (keep-alive, reconnection strategy, etc.)
 
 const (
 	tcpTimeout = 10 * time.Second
@@ -42,7 +42,6 @@ func NewClient(address string) *Client {
 
 // Send sends a PDU to a Slave (Downstream) and returns the response PDU.
 func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
-	// 1. Construct ADU
 	// Transaction ID: Incrementing
 	tid := uint16(atomic.AddUint32(&mb.transactionID, 1))
 
@@ -59,11 +58,7 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to encode ADU: %w", err)
 	}
 
-	// 2. Send (Dialing a new connection for simplicity as per original design, could verify persistence)
-	// For better performance, we should keep connection alive.
-	// But let's stick to existing logic for now, or improve it slightly?
-	// Existing logic was DialTimeout per request.
-
+	// Dialing a new connection for simplicity
 	conn, err := net.DialTimeout("tcp", mb.Address, mb.Timeout)
 	if err != nil {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("modbus: failed to connect to %s: %w", mb.Address, err)
@@ -79,13 +74,13 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 		return modbus.ProtocolDataUnit{}, err
 	}
 
-	// 3. Decode Response
+	// Decode Response
 	respAdu, err := Decode(respBytes)
 	if err != nil {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to decode response ADU: %w", err)
 	}
 
-	// 4. Verify
+	// Verify
 	if err := adu.Verify(respAdu); err != nil {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("verification failed: %w", err)
 	}

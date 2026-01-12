@@ -87,14 +87,10 @@ func LoadConfig(configFile string) (*Config, error) {
 	v.SetDefault("log.level", "info")
 
 	if err := v.ReadInConfig(); err != nil {
-		// If config file not found, return error
-		// For multidrop gateway, without config file it's hard to guess what to do.
-		// So we might prefer erroring if no config found, or return empty.
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("failed to found config file: %w", err)
 		}
 
-		// For other error, recommand users to check config file.
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
