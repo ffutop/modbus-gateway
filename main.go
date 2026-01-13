@@ -17,6 +17,7 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/transport/local"
 	"github.com/ffutop/modbus-gateway/transport/rtu"
 	"github.com/ffutop/modbus-gateway/transport/tcp"
 )
@@ -147,7 +148,7 @@ func createDownstream(cfg config.DownstreamConfig) (transport.Downstream, error)
 	case "rtu":
 		return rtu.NewClient(cfg.Serial), nil
 	case "local":
-		return nil, fmt.Errorf("local type not yet implemented")
+		return local.NewClient(cfg.Local), nil
 	default:
 		return nil, fmt.Errorf("unknown downstream type: %s", cfg.Type)
 	}
