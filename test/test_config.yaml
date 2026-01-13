@@ -1,3 +1,4 @@
+
 gateways:
   - name: "test-gateway"
     upstreams:

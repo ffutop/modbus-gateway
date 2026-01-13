@@ -14,46 +14,324 @@
 </div>
 
 
-A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go. It acts as a bridge, allowing multiple Modbus TCP masters (clients) to communicate over a network with a single Modbus RTU slave (serial device).
+# Modbus Gateway
 
-## Architecture
+A high-performance, highly flexible Modbus gateway written in Go. It serves as a universal Modbus protocol converter and router, supporting **Multi-Master Multi-Slave** architectures and allowing arbitrary conversion between TCP and RTU (serial) protocols.
 
-The gateway receives concurrent requests from multiple TCP clients, places them in a queue, and then sends them serially one by one to the RTU device, ensuring that communication on the serial bus does not conflict.
+## Core Positioning
+
+- **Multi-Master Support**: Allows multiple Masters to access the same Slave simultaneously. The gateway queues and serializes requests to prevent bus conflicts.
+- **Multi-Slave Support**: By configuring multiple Gateway rules within a single instance, you can manage multiple slaves connected to different physical ports or network addresses simultaneously.
+- **Full Protocol Support**: Both Upstream (Master side) and Downstream (Slave side) can be independently configured as TCP or RTU, enabling any combination of protocol bridging.
+
+## User Scenarios
+
+The flexibility of this gateway makes it suitable for various complex industrial requirements:
+
+### Scenario 1: Typical TCP to RTU (Multi-Master, One Slave)
+
+The most common scenario: Multiple upper-level systems (SCADA, HMI) need to monitor the same traditional Modbus RTU device (e.g., power meter, thermostat) simultaneously. The gateway acts as a TCP Server receiving requests and forwarding them via serial port to the slave.
 
 ```mermaid
-%%{init: { "themeVariables": { "clusterBkg": "#ffffff", "clusterBorder": "#000066" }}}%%
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
 graph LR
+    subgraph "Masters (TCP)"
+        M1["SCADA System"]
+        M2["HMI Panel"]
+    end
+    
+    G["Gateway<br>(TCP Server -> Serial Port)"]
+    
+    subgraph "Slave (RTU)"
+        S1["Sensor Device"]
+    end
 
-subgraph "Modbus TCP Masters (Clients)"
-    TCPMaster1
-    TCPMaster2
-    TCPMaster3
-end
-
-ModbusGateway[Modbus Gateway]
-
-subgraph "Modbus RTU Slave (Serial Device)"
-    RTUSlave
-end
-
-TCPMaster1 --> ModbusGateway 
-TCPMaster2 --> ModbusGateway
-TCPMaster3 --> ModbusGateway
-
-ModbusGateway --"Serial Port<br>(e.g., /dev/ttyUSB0)"--> RTUSlave
-
-classDef darkStyle fill:#ffffff,stroke:#000066,color:#000066,stroke-width:2px
-class TCPMaster1,TCPMaster2,TCPMaster3,ModbusGateway,RTUSlave darkStyle;
+    M1 -->|TCP| G
+    M2 -->|TCP| G
+    G -->|Serial/RS485| S1
 ```
 
-## Features
+### Scenario 2: Multi-Channel Isolation (Multi-Gateway)
 
-- **Protocol Conversion**: Seamless conversion between Modbus TCP and Modbus RTU.
-- **Concurrent Handling**: Supports multiple TCP clients connecting simultaneously, with requests serialized one by one to the RTU device.
-- **Flexible Configuration**: Supports configuration via command-line arguments and YAML configuration files.
-- **RS485 Support**: Full support for RS485 communication mode, including `RTS` signal control.
-- **Robust Logging System**: Configurable logging levels (debug, info, warn, error) and output targets (console or file).
-- **Connection Management**: Automatic handling of serial port connections, disconnections, and idle timeouts.
+You can define multiple gateway configurations running in the same process. For example, if you have two RS485 serial ports connected to different device groups, you can open two TCP ports mapped to these serial ports respectively, achieving completely isolated concurrent access.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["Master A"]
+        M2["Master B"]
+    end
+
+    subgraph "Gateway Instance"
+        G1["Gateway Logic 1<br>Port 502 -> ttyUSB0"]
+        G2["Gateway Logic 2<br>Port 503 -> ttyUSB1"]
+    end
+
+    subgraph "Slaves"
+        S1["Slave Group 1"]
+        S2["Slave Group 2"]
+    end
+
+    M1 -->|Port 502| G1 --> S1
+    M2 -->|Port 503| G2 --> S2
+```
+
+### Scenario 3: RTU to TCP (Legacy Device Networking)
+
+Using the new bidirectional protocol support, you can use a legacy PLC (which only supports Serial Modbus Master) to control remote Modbus TCP devices. The gateway listens on the serial port (acting as a Slave), converts received commands into TCP requests, and sends them to the remote device.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Master (RTU)"
+        PLC["Legacy PLC"]
+    end
+
+    G["Gateway<br>(RTU Slave -> TCP Client)"]
+
+    subgraph "Slave (TCP)"
+        Remote["Smart Meter"]
+    end
+
+    PLC -->|Serial| G -->|TCP| Remote
+```
+
+### Scenario 4: Hybrid Master (TCP + RTU Master -> RTU Slave)
+
+This is one of the most powerful features of this gateway. It allows a traditional local HMI (RTU interface) and a remote SCADA system (TCP interface) to control the same underlying Modbus RTU device simultaneously.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["SCADA (TCP)"]
+        M2["Local HMI (RTU)"]
+    end
+
+    G["Gateway"]
+
+    subgraph "Slave"
+        S1["Device (RTU)"]
+    end
+
+    M1 -->|TCP| G
+    M2 -->|Serial 1| G
+    G -->|Serial 2| S1
+```
+
+### Scenario 5: Serial Multiplexer
+
+Even without network, you can use it as a "Serial Multiplexer". It allows multiple Serial Masters to share access to a single Serial Slave, solving the problem of insufficient serial ports on legacy devices.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Serial Masters"
+        M1["Master A (RTU)"]
+        M2["Master B (RTU)"]
+    end
+
+    G["Gateway"]
+
+    subgraph "Serial Slave"
+        S1["Slave Device (RTU)"]
+    end
+
+    M1 -->|Serial 1| G
+    M2 -->|Serial 2| G
+    G -->|Serial 3| S1
+```
+
+### Scenario 6: TCP Protocol Bridging & Firewall
+
+Design a bridge between two TCP networks. For instance, exposing an internal Modbus TCP device to an external network, or acting as a middleware for protocol sanitization/logging.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    M[Remote Master] -->|TCP Public| G[Gateway] -->|TCP Private| S[Local Slave]
+```
+
+### Scenario 7: One Master Multi-Slave (RS485 Bus Daisychain)
+
+This is the standard topology for Modbus RTU. The gateway supports transparent transmission, allowing you to mount multiple slave devices (e.g., ID 1, ID 2, ID 3...) on a single serial port (downstream). The TCP Master only needs to specify the target Slave ID, and the gateway will send the request to the bus, where the corresponding device will respond automatically.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Master"
+        M["TCP Client"]
+    end
+    
+    G["Gateway"]
+    
+    subgraph "RS485 Bus"
+        S1["Slave ID 1"]
+        S2["Slave ID 2"]
+        S3["Slave ID 3"]
+    end
+
+    M -->|TCP| G -->|Serial| S1
+    S1 --- S2 --- S3
+```
+
+### Scenario 8: Centralized Bus Management (Multi-Master Multi-Slave)
+
+In large-scale systems, you might have multiple RS485 networks (e.g., Floor 1 Bus, Floor 2 Bus). You can configure multiple forwarding rules on a single gateway server, mapping different TCP ports to different physical serial ports. All upper-level systems (Masters) can access the corresponding bus networks by connecting to different ports, achieving centralized management.
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#ffffff'
+    primaryBorderColor: '#424242'
+    primaryTextColor: '#424242'
+    secondaryColor: '#ffffff'
+    secondaryBorderColor: '#424242'
+    secondaryTextColor: '#424242'
+    lineColor: '#424242'
+    edgeLabelBackground: '#ffffff'
+    clusterBkg: '#ffffff'
+    clusterBorder: '#424242'
+    tertiaryColor: '#ffffff'
+---
+graph LR
+    subgraph "Masters"
+        M1["SCADA A"]
+        M2["SCADA B"]
+    end
+
+    subgraph "Gateway Server"
+        P1["Port 502"]
+        P2["Port 503"]
+    end
+
+    subgraph "Field Buses"
+        B1["Bus 1 (Floor 1)"]
+        B2["Bus 2 (Floor 2)"]
+    end
+
+    M1 --> P1
+    M1 --> P2
+    M2 --> P1
+    M2 --> P2
+    P1 -->|/dev/ttyUSB0| B1
+    P2 -->|/dev/ttyUSB1| B2
+```
+
+## Key Features
+
+- **True Multi-Gateway Architecture**: Run multiple independent conversion logics within a single process.
+- **Smart Queuing**: Maintains independent request queues for each downstream slave, ensuring atomicity of RS485 bus communication.
+- **Flexible Configuration**: YAML-based configuration system defining clear network topologies.
+- **Deep RS485 Support**: Includes RTS signal timing control, adapting to various industrial serial converters.
 
 ## Installation
 
@@ -71,85 +349,59 @@ go build -o modbus-gateway
 After the build process is complete, you will find the `modbus-gateway` executable file in the project root directory.
 
 ## Usage
-
-You can start the gateway directly via command-line arguments.
-
-### Command-line Example
-
-Connect to the serial device located at `/dev/ttyUSB0` with a baud rate of `9600` and listen for TCP connections on port `5020` locally:
-
-```bash
-./modbus-gateway -p /dev/ttyUSB0 -s 9600 -P 5020 -v debug
-```
-
-### Command-line Parameters
-
-Run `./modbus-gateway --help` to view all available parameters:
-
-```text
-Usage of ./modbus-gateway:
-  -A, --tcp_address string   TCP server address to bind. (default "0.0.0.0")
-  -C, --max_conns int        Maximum number of simultaneous TCP connections. (default 32)
-  -L, --log_file string      Log file name ('-' for logging to STDOUT only).
-  -P, --tcp_port int         TCP server port number. (default 502)
-  -R, --rqst_pause int       Pause between requests in milliseconds. (default 100)
-  -W, --timeout int          Response wait time in milliseconds. (default 500)
-  -c, --config string        Configuration file path.
-  -p, --device string        Serial port device name. (default "/tmp/pts1")
-  -s, --baud_rate int        Serial port speed. (default 19200)
-  -v, --log_level string     Log verbosity level (debug, info, warn, error). (default "info")
-```
-
-### Configuration
-
-The gateway's configuration loading follows the following priority order: **Command-line Parameters > Configuration File > Default Values**.
-
-### Configuration File
-
-You can use a YAML file to centrally manage all configurations. Specify the configuration file path using the `-c` or `--config` parameter.
-
-### Default Values
-
-If no configuration file is specified, the gateway will use the default values as defined in the code.
-
-*   `/etc/modbusgw/`
-*   `$HOME/.modbusgw/`
-*   `./` (current working directory)
-
-#### Example `config.yaml`
-
-Replace this with the following content:
-
-
-```yaml
-# TCP Server Configuration
-tcp_address: "0.0.0.0"
-tcp_port: 502
-max_conns: 32
-
-# Serial/RTU Configuration
-device: "/dev/ttyUSB0" # Serial port device name, e.g., "/dev/ttyUSB0" on Linux or "COM3" on Windows
-baud_rate: 19200
-data_bits: 8
-parity: "N" # Parity bit (N: None, E: Even, O: Odd)
-stop_bits: 1
-timeout: 500ms      # RTU response timeout, supports units: ns, us, ms, s, m, h
-rqst_pause: 100ms   # Pause between requests in milliseconds
-
-# Serial/RTU RS485 Configuration (Only configure if needed)
-rs485:
-  enabled: true
-  delay_rts_before_send: 2ms
-  delay_rts_after_send: 2ms
-  rts_high_during_send: true
-  rts_high_after_send: false
-  rx_during_tx: false
-
-# Logging Configuration
-log_level: "info" # Log verbosity level (debug, info, warn, error)
-log_file: ""      # Log file path, '-' for logging to STDOUT only
-
-```
+ 
+The program is driven by a configuration file. You can start multiple gateway instances.
+ 
+### Start
+ 
+Use the `-config` flag to specify the configuration file path:
+ 
+ ```bash
+ ./modbus-gateway -config config.yaml
+ ```
+ 
+ ## Configuration
+ 
+ ### Configuration Structure
+ 
+ The configuration file supports defining multiple gateways (`gateways`). Each gateway can have multiple upstream masters (`upstreams`) and one downstream slave (`downstream`).
+ 
+ #### Example `config.yaml`
+ 
+ ```yaml
+ gateways:
+   - name: "gateway-1"
+     # Upstream: Who connects to the gateway (Modbus Masters)
+     upstreams:
+       - type: "tcp"
+         tcp:
+           address: "0.0.0.0:502"
+     # Downstream: Who the gateway connects to (Modbus Slave)
+     downstream:
+       type: "rtu"
+       serial:
+         device: "/dev/ttyUSB0"
+         baud_rate: 19200
+         data_bits: 8
+         parity: "N"
+         stop_bits: 1
+         timeout: "500ms"
+ 
+   # Example: Another gateway instance, TCP to TCP bridge
+   - name: "gateway-tcp-bridge"
+     upstreams:
+       - type: "tcp"
+         tcp:
+           address: "0.0.0.0:503"
+     downstream:
+       type: "tcp"
+       tcp:
+         address: "192.168.1.100:502"
+ 
+ log:
+   level: "info" # debug, info, warn, error
+   file: ""      # empty for stdout
+ ```
 
 ## Development and Testing
 

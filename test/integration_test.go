@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,14 +72,38 @@ func TestMain(m *testing.M) {
 	defer rtuServer.Close()
 	log.Printf("Modbus RTU 从站已在 %s 上启动。", pts1)
 
+	// Create temporary config file
+	configContent := fmt.Sprintf(`
+gateways:
+  - name: "test-gateway"
+    upstreams:
+      - type: "tcp"
+        tcp:
+          address: "0.0.0.0:%d"
+    downstream:
+      type: "rtu"
+      serial:
+        device: "%s"
+        baud_rate: 19200
+        data_bits: 8
+        parity: "N"
+        stop_bits: 1
+        timeout: "1s"
+log:
+  level: "debug"
+`, gatewayTCPPort, pts0)
+
+	configFile := filepath.Join(cwd, "test_config.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		log.Fatalf("failed to write config file: %v", err)
+	}
+	defer os.Remove(configFile)
+
 	var gatewayCmd *exec.Cmd
 	go func() {
 		// 启动 modbus-gateway
 		gatewayCmd = exec.Command(gatewayBinaryPath,
-			"-s19200",
-			"-p"+pts0,
-			"-vdebug",
-			fmt.Sprintf("-P%d", gatewayTCPPort), // TCP 端口
+			"-config", configFile,
 		)
 		// 将子进程的标准输出和标准错误重定向到当前测试进程的输出
 		gatewayCmd.Stdout = os.Stdout
@@ -87,7 +112,7 @@ func TestMain(m *testing.M) {
 		if err := gatewayCmd.Start(); err != nil {
 			log.Fatalf("启动 modbus-gateway 失败: %v", err)
 		}
-		log.Printf("modbus-gateway 进程已启动 (PID: %d)，连接到 %s，监听 TCP 端口 %d。", gatewayCmd.Process.Pid, pts0, gatewayTCPPort)
+		log.Printf("modbus-gateway 进程已启动 (PID: %d)，使用配置文件 %s", gatewayCmd.Process.Pid, configFile)
 	}()
 
 	// 等待网关完全启动
@@ -203,3 +228,56 @@ func TestWriteAndReadSingleRegister(t *testing.T) {
 		t.Errorf("回读的值不匹配。得到: %#x, 期望: %#x", readValue, valueToWrite)
 	}
 }
+
+// TestReadTimeoutException 测试下游不响应导致网关返回超时异常 (FC=0x0B)
+func TestReadTimeoutException(t *testing.T) {
+	// 创建一个特殊的配置文件，指向一个不存在的串口设备以模拟超时/连接失败
+	timeoutTCPPort := gatewayTCPPort + 1
+	configContent := fmt.Sprintf(`
+gateways:
+  - name: "timeout-gateway"
+    upstreams:
+      - type: "tcp"
+        tcp:
+          address: "127.0.0.1:%d"
+    downstream:
+      type: "rtu"
+      serial:
+        device: "/dev/nonexistent_device_test"
+        timeout: "100ms"
+`, timeoutTCPPort)
+
+	tmpConfigFile := filepath.Join(os.TempDir(), "timeout_config.yaml")
+	os.WriteFile(tmpConfigFile, []byte(configContent), 0644)
+	defer os.Remove(tmpConfigFile)
+
+	cmd := exec.Command(gatewayBinaryPath, "-config", tmpConfigFile)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("无法启动临时网关: %v", err)
+	}
+	defer cmd.Process.Kill()
+
+	// 等待网关启动
+	time.Sleep(500 * time.Millisecond)
+
+	handler := modbus.NewTCPClientHandler(fmt.Sprintf("127.0.0.1:%d", timeoutTCPPort))
+	handler.Timeout = 2 * time.Second
+	client := modbus.NewClient(handler)
+	if err := handler.Connect(); err != nil {
+		// 如果网关因为找不到设备直接退出或拒绝连接，也算一种失败，但我们期望它能运行并返回异常
+		t.Logf("连接网关状态: %v", err)
+	}
+	defer handler.Close()
+
+	_, err := client.ReadHoldingRegisters(0, 1)
+	if err == nil {
+		t.Fatal("期望得到超时异常响应，但实际成功了")
+	}
+
+	log.Printf("捕获到预期的异常: %v", err)
+	// 期望错误包含 "exception '11'" (0x0B) 或 "exception '4'" (0x04, 如果是连接失败)
+	if !strings.Contains(err.Error(), "exception '11'") && !strings.Contains(err.Error(), "exception '4'") {
+		t.Errorf("期望得到 Modbus 异常响应，实际得到: %v", err)
+	}
+}
+
