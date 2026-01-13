@@ -14,6 +14,16 @@ const (
 	MaxAddress = 65535
 )
 
+// TableType represents the type of Modbus data table.
+type TableType int
+
+const (
+	TableCoils TableType = iota
+	TableDiscreteInputs
+	TableHoldingRegisters
+	TableInputRegisters
+)
+
 // DataModel holds the modbus data in memory.
 // It uses a simple flat memory model covering the full 16-bit address space.
 type DataModel struct {

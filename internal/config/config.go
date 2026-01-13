@@ -50,7 +50,14 @@ type DownstreamConfig struct {
 
 // LocalConfig defines settings for local modbus slave device
 type LocalConfig struct {
-	Device string `mapstructure:"device"`
+	Device      string            `mapstructure:"device"`
+	Persistence PersistenceConfig `mapstructure:"persistence"`
+}
+
+// PersistenceConfig defines data storage settings
+type PersistenceConfig struct {
+	Type string `mapstructure:"type"` // "memory", "file"
+	Path string `mapstructure:"path"` // File path for "file" type
 }
 
 // TcpConfig defines TCP settings

@@ -8,17 +8,22 @@ import (
 	"encoding/binary"
 
 	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
 	"github.com/ffutop/modbus-gateway/modbus"
 )
 
 // LocalSlave implements the Modbus protocol logic on top of a DataModel.
 type LocalSlave struct {
-	model *model.DataModel
+	model   *model.DataModel
+	storage persistence.Storage
 }
 
 // NewLocalSlave creates a new LocalSlave.
-func NewLocalSlave(m *model.DataModel) *LocalSlave {
-	return &LocalSlave{model: m}
+func NewLocalSlave(m *model.DataModel, s persistence.Storage) *LocalSlave {
+	return &LocalSlave{
+		model:   m,
+		storage: s,
+	}
 }
 
 // Process executes the Modbus Function Code against the memory model.
@@ -159,6 +164,7 @@ func (s *LocalSlave) handleWriteSingleCoil(req modbus.ProtocolDataUnit) (modbus.
 	if err := s.model.WriteSingleCoil(address, value); err != nil {
 		return s.exception(req.FunctionCode, modbus.ExceptionCodeIllegalDataAddress), nil
 	}
+	s.storage.OnWrite(model.TableCoils, address, 1)
 
 	return req, nil // Echo request
 }
@@ -173,6 +179,7 @@ func (s *LocalSlave) handleWriteSingleRegister(req modbus.ProtocolDataUnit) (mod
 	if err := s.model.WriteSingleRegister(address, value); err != nil {
 		return s.exception(req.FunctionCode, modbus.ExceptionCodeIllegalDataAddress), nil
 	}
+	s.storage.OnWrite(model.TableHoldingRegisters, address, 1)
 
 	return req, nil // Echo request
 }
@@ -196,7 +203,7 @@ func (s *LocalSlave) handleWriteMultipleCoils(req modbus.ProtocolDataUnit) (modb
 	if err := s.model.WriteMultipleCoils(address, quantity, req.Data[5:]); err != nil {
 		return s.exception(req.FunctionCode, modbus.ExceptionCodeIllegalDataAddress), nil
 	}
-
+	s.storage.OnWrite(model.TableCoils, address, quantity)
 	respData := make([]byte, 4)
 	binary.BigEndian.PutUint16(respData[0:2], address)
 	binary.BigEndian.PutUint16(respData[2:4], quantity)
@@ -211,6 +218,7 @@ func (s *LocalSlave) handleWriteMultipleRegisters(req modbus.ProtocolDataUnit) (
 	if len(req.Data) < 6 {
 		return s.exception(req.FunctionCode, modbus.ExceptionCodeIllegalDataValue), nil
 	}
+
 	address := binary.BigEndian.Uint16(req.Data[0:2])
 	quantity := binary.BigEndian.Uint16(req.Data[2:4])
 	byteCount := req.Data[4]
@@ -226,8 +234,9 @@ func (s *LocalSlave) handleWriteMultipleRegisters(req modbus.ProtocolDataUnit) (
 	if err := s.model.WriteMultipleRegisters(address, quantity, req.Data[5:]); err != nil {
 		return s.exception(req.FunctionCode, modbus.ExceptionCodeIllegalDataAddress), nil
 	}
-
+	s.storage.OnWrite(model.TableHoldingRegisters, address, quantity)
 	respData := make([]byte, 4)
+
 	binary.BigEndian.PutUint16(respData[0:2], address)
 	binary.BigEndian.PutUint16(respData[2:4], quantity)
 
