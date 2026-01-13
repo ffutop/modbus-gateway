@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Li Jinling. All rights reserved.
+// Copyright (c) 2025-2026 Li Jinling. All rights reserved.
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
@@ -26,9 +26,9 @@ type LogConfig struct {
 
 // GatewayConfig defines a single gateway instance
 type GatewayConfig struct {
-	Name       string           `mapstructure:"name"`
-	Upstreams  []UpstreamConfig `mapstructure:"upstreams"`
-	Downstream DownstreamConfig `mapstructure:"downstream"`
+	Name        string             `mapstructure:"name"`
+	Upstreams   []UpstreamConfig   `mapstructure:"upstreams"`
+	Downstreams []DownstreamConfig `mapstructure:"downstreams"`
 }
 
 // UpstreamConfig defines a master connecting to the gateway
@@ -40,9 +40,17 @@ type UpstreamConfig struct {
 
 // DownstreamConfig defines the slave the gateway connects to
 type DownstreamConfig struct {
-	Type   string       `mapstructure:"type"`   // "tcp" or "rtu"
-	Tcp    TcpConfig    `mapstructure:"tcp"`    // Used if Type is "tcp"
-	Serial SerialConfig `mapstructure:"serial"` // Used if Type is "rtu"
+	Name     string       `mapstructure:"name"`      // Optional name for logging
+	Type     string       `mapstructure:"type"`      // "tcp", "rtu", or "local"
+	SlaveIDs string       `mapstructure:"slave_ids"` // Routing rules: "1", "1,2", "1-10"
+	Tcp      TcpConfig    `mapstructure:"tcp"`       // Used if Type is "tcp"
+	Serial   SerialConfig `mapstructure:"serial"`    // Used if Type is "rtu"
+	Local    LocalConfig  `mapstructure:"local"`     // Used if Type is "local"
+}
+
+// LocalConfig defines settings for local modbus slave device
+type LocalConfig struct {
+	Device string `mapstructure:"device"`
 }
 
 // TcpConfig defines TCP settings
@@ -102,7 +110,11 @@ func LoadConfig(configFile string) (*Config, error) {
 	// Validate / Fixups
 	for i := range config.Gateways {
 		gw := &config.Gateways[i]
-		fixupSerial(&gw.Downstream.Serial)
+
+		for j := range gw.Downstreams {
+			fixupSerial(&gw.Downstreams[j].Serial)
+		}
+
 		for j := range gw.Upstreams {
 			fixupSerial(&gw.Upstreams[j].Serial)
 		}
