@@ -3,6 +3,7 @@ module github.com/ffutop/modbus-gateway
 go 1.21
 
 require (
+	github.com/edsrzf/mmap-go v1.2.0
 	github.com/grid-x/serial v0.0.0-20211107191517-583c7356b3aa
 	github.com/spf13/viper v1.18.2
 )

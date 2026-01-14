@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"syscall"
-	"unsafe"
 
+	"github.com/edsrzf/mmap-go"
 	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
 )
 
@@ -26,21 +25,8 @@ import (
 type MmapStorage struct {
 	path string
 	file *os.File
-	data []byte
+	data mmap.MMap
 }
-
-const (
-	sizeCoils    = model.MaxAddress + 1
-	sizeDiscrete = model.MaxAddress + 1
-	sizeHolding  = (model.MaxAddress + 1) * 2
-	sizeInput    = (model.MaxAddress + 1) * 2
-	totalSize    = sizeCoils + sizeDiscrete + sizeHolding + sizeInput
-
-	offsetCoils    = 0
-	offsetDiscrete = offsetCoils + sizeCoils
-	offsetHolding  = offsetDiscrete + sizeDiscrete
-	offsetInput    = offsetHolding + sizeHolding
-)
 
 // NewMmapStorage creates a new MmapStorage.
 func NewMmapStorage(path string) *MmapStorage {
@@ -73,7 +59,7 @@ func (ms *MmapStorage) Load() (*model.DataModel, error) {
 	}
 
 	// Mmap the file
-	data, err := syscall.Mmap(int(f.Fd()), 0, totalSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	data, err := mmap.Map(f, mmap.RDWR, 0)
 	if err != nil {
 		f.Close()
 		return nil, fmt.Errorf("mmap failed: %w", err)
@@ -81,70 +67,42 @@ func (ms *MmapStorage) Load() (*model.DataModel, error) {
 	ms.data = data
 
 	// Construct the DataModel backed by the mmap slice
-	m := &model.DataModel{}
-
-	// Coils (Bytes)
-	m.Coils = data[offsetCoils : offsetCoils+sizeCoils]
-
-	// Discrete Inputs (Bytes)
-	m.DiscreteInputs = data[offsetDiscrete : offsetDiscrete+sizeDiscrete]
-
-	// Holding Registers (Uint16)
-	// We use unsafe to create a []uint16 slice backed by the byte array.
-	// Note: This relies on host endianness (LittleEndian usually).
-	// Modbus protocol handling in DataModel must handle endian conversions if necessary,
-	// but currently DataModel stores uint16 and handles BigEndian conversion during Read/Write bytes.
-	// So storing as host-uint16 is correct for in-memory manipulation.
-	holdingBytes := data[offsetHolding : offsetHolding+sizeHolding]
-	m.HoldingRegisters = unsafe.Slice((*uint16)(unsafe.Pointer(&holdingBytes[0])), sizeHolding/2)
-
-	// Input Registers (Uint16)
-	inputBytes := data[offsetInput : offsetInput+sizeInput]
-	m.InputRegisters = unsafe.Slice((*uint16)(unsafe.Pointer(&inputBytes[0])), sizeInput/2)
-
-	return m, nil
+	return mapBytesToModel(data), nil
 }
 
 // Save flushes the mmap to disk.
 func (ms *MmapStorage) Save(m *model.DataModel) error {
-	// MS_SYNC: Request synchronous write
-	return ms.sync()
-}
-
-// OnWrite triggers a sync for persistence.
-func (ms *MmapStorage) OnWrite(table model.TableType, address, quantity uint16) {
-	// For "Real-time" persistence, we call Msync.
-	// If performance is an issue, we could rely on OS lazy writeback (MAP_SHARED)
-	// and only Msync periodically or on critical events.
-	// Given the requirement "ensure data can be recovered", we should sync.
-	if err := ms.sync(); err != nil {
-		slog.Error("Failed to sync mmap", "err", err)
-	}
-}
-
-func (ms *MmapStorage) sync() error {
 	if ms.data == nil {
-		return nil
+		return fmt.Errorf("mmap data is nil")
 	}
-	// SYS_MSYNC logic
-	// In Go syscall, Mmap is typically unmapped with Munmap.
-	// Syncing is done via Msync.
-	_, _, errno := syscall.Syscall(syscall.SYS_MSYNC, uintptr(unsafe.Pointer(&ms.data[0])), uintptr(len(ms.data)), syscall.MS_SYNC)
-	if errno != 0 {
-		return errno
+	return ms.data.Flush()
+}
+
+// OnWrite triggers a flush for persistence.
+func (ms *MmapStorage) OnWrite(table model.TableType, address, quantity uint16) {
+	if ms.data == nil {
+		return
 	}
-	return nil
+	// For "Real-time" persistence, flush mmap data to disk
+	if err := ms.data.Flush(); err != nil {
+		slog.Error("Failed to flush mmap", "err", err)
+	}
 }
 
 // Close unmaps and closes the file.
 func (ms *MmapStorage) Close() error {
+	var err error
 	if ms.data != nil {
-		syscall.Munmap(ms.data)
+		if e := ms.data.Unmap(); e != nil {
+			err = e
+		}
 		ms.data = nil
 	}
 	if ms.file != nil {
-		ms.file.Close()
+		if e := ms.file.Close(); e != nil {
+			err = e
+		}
 		ms.file = nil
 	}
-	return nil
+	return err
 }
