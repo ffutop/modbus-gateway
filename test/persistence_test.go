@@ -15,8 +15,6 @@ func TestPersistence(t *testing.T) {
 	// 1. Setup paths
 	tempDir := os.TempDir()
 	dbPath := filepath.Join(tempDir, "modbus_test.json")
-	os.Remove(dbPath) // Ensure clean start
-	defer os.Remove(dbPath)
 
 	port := 33504
 	configContent := fmt.Sprintf(`
@@ -34,7 +32,6 @@ gateways:
           persistence:
             type: "file"
             path: "%s"
-            interval: "100ms"
 log:
   level: "debug"
 `, port, dbPath)

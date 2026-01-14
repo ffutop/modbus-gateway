@@ -56,8 +56,8 @@ type LocalConfig struct {
 
 // PersistenceConfig defines data storage settings
 type PersistenceConfig struct {
-	Type string `mapstructure:"type"` // "memory", "file"
-	Path string `mapstructure:"path"` // File path for "file" type
+	Type string `mapstructure:"type"` // "memory", "file", "mmap"
+	Path string `mapstructure:"path"` // File path for "file/mmap" type
 }
 
 // TcpConfig defines TCP settings

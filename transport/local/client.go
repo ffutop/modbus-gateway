@@ -24,7 +24,10 @@ type Client struct {
 func NewClient(cfg config.LocalConfig) *Client {
 	var storage persistence.Storage
 	switch cfg.Persistence.Type {
-	case "mmap", "file": // "file" kept for config compatibility, now uses MMAP
+	case "file":
+		slog.Info("Initializing local slave with file persistence", "path", cfg.Persistence.Path)
+		storage = persistence.NewFileStorage(cfg.Persistence.Path)
+	case "mmap":
 		slog.Info("Initializing local slave with MMAP persistence", "path", cfg.Persistence.Path)
 		storage = persistence.NewMmapStorage(cfg.Persistence.Path)
 	case "sql":

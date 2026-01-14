@@ -17,6 +17,24 @@ func BenchmarkMemoryStorage_OnWrite(b *testing.B) {
 	}
 }
 
+func BenchmarkFileStorage_OnWrite(b *testing.B) {
+	tmpDir := b.TempDir()
+	path := filepath.Join(tmpDir, "bench_file.bin")
+	ms := NewFileStorage(path)
+	modelPtr, err := ms.Load()
+	if err != nil {
+		b.Fatalf("Failed to load file storage: %v", err)
+	}
+	defer ms.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Modify data to be realistic
+		modelPtr.HoldingRegisters[10] = uint16(i)
+		ms.OnWrite(model.TableHoldingRegisters, 10, 1)
+	}
+}
+
 // BenchmarkMmapStorage_OnWrite benchmarks the OnWrite hook for MmapStorage (msync).
 func BenchmarkMmapStorage_OnWrite(b *testing.B) {
 	tmpDir := b.TempDir()
@@ -51,20 +69,28 @@ func BenchmarkMemoryStorage_Load(b *testing.B) {
 	}
 }
 
+// BenchmarkFileStorage_Load benchmarks the Load operation for FileStorage.
+func BenchmarkFileStorage_Load(b *testing.B) {
+	tmpDir := b.TempDir()
+	path := filepath.Join(tmpDir, "bench_file_load.bin")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ms := NewFileStorage(path)
+		_, err := ms.Load()
+		if err != nil {
+			b.Fatalf("Load failed: %v", err)
+		}
+		ms.Close()
+	}
+}
+
 // BenchmarkMmapStorage_Load benchmarks the Load operation for MmapStorage.
 // Note: This involves file open, fstat, and mmap system calls.
 func BenchmarkMmapStorage_Load(b *testing.B) {
 	tmpDir := b.TempDir()
 	path := filepath.Join(tmpDir, "bench_mmap_load.bin")
-	
-	// Create the file once so we aren't benchmarking file creation every time, 
-	// although Load() does open it. 
-	// MmapStorage.Load() opens the file. To benchmark pure Load, we need to Close() inside the loop?
-	// If we return a new storage every time, we need to close it.
-	
-	// Pre-create file to avoid "creation" overhead if we want to measure "open existing".
-	// But Load() handles creation too. Let's just measure the full Load cycle.
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ms := NewMmapStorage(path)
