@@ -17,6 +17,7 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/transport/local"
 	"github.com/ffutop/modbus-gateway/transport/rtu"
 	"github.com/ffutop/modbus-gateway/transport/tcp"
 )
@@ -43,15 +44,52 @@ func main() {
 	defer cancel()
 
 	for _, gwCfg := range cfg.Gateways {
-		// Create Downstream
-		var ds transport.Downstream
-		switch gwCfg.Downstream.Type {
-		case "tcp":
-			ds = tcp.NewClient(gwCfg.Downstream.Tcp.Address)
-		case "rtu":
-			ds = rtu.NewClient(gwCfg.Downstream.Serial)
-		default:
-			slog.Error("Unknown downstream type", "type", gwCfg.Downstream.Type, "gateway", gwCfg.Name)
+		// Setup Routing
+		routes := make(map[byte]transport.Downstream)
+		var defaultRoute transport.Downstream
+
+		// Compatibility Check: If only one downstream and no SlaveIDs, treat as default route
+		if len(gwCfg.Downstreams) == 1 && gwCfg.Downstreams[0].SlaveIDs == "" {
+			ds, err := createDownstream(gwCfg.Downstreams[0])
+			if err != nil {
+				slog.Error("Failed to create default downstream", "gateway", gwCfg.Name, "err", err)
+				continue
+			}
+			defaultRoute = ds
+			slog.Info("Configured default route (legacy mode)", "gateway", gwCfg.Name)
+		} else {
+			// Routing Mode
+			for _, dsCfg := range gwCfg.Downstreams {
+				ds, err := createDownstream(dsCfg)
+				if err != nil {
+					slog.Error("Failed to create downstream", "gateway", gwCfg.Name, "err", err)
+					continue
+				}
+
+				ids, err := gateway.ParseSlaveIDs(dsCfg.SlaveIDs)
+				if err != nil {
+					slog.Error("Failed to parse slave IDs", "gateway", gwCfg.Name, "slave_ids", dsCfg.SlaveIDs, "err", err)
+					os.Exit(1)
+				}
+
+				if len(ids) == 0 {
+					slog.Warn("Downstream configured without SlaveIDs in routing mode, it will be unreachable", "gateway", gwCfg.Name, "type", dsCfg.Type)
+					continue
+				}
+
+				for _, id := range ids {
+					if _, exists := routes[id]; exists {
+						slog.Error("Duplicate route for slave ID", "id", id, "gateway", gwCfg.Name)
+						os.Exit(1)
+					}
+					routes[id] = ds
+				}
+			}
+			slog.Info("Configured routing table", "gateway", gwCfg.Name, "routes_count", len(routes))
+		}
+
+		if len(routes) == 0 && defaultRoute == nil {
+			slog.Error("Gateway has no valid routes", "gateway", gwCfg.Name)
 			continue
 		}
 
@@ -71,7 +109,7 @@ func main() {
 			upstreams = append(upstreams, us)
 		}
 
-		gw := gateway.NewGateway(gwCfg, upstreams, ds)
+		gw := gateway.NewGateway(gwCfg.Name, upstreams, routes, defaultRoute)
 		gateways = append(gateways, gw)
 	}
 
@@ -101,6 +139,19 @@ func main() {
 	cancel()
 	wg.Wait()
 	slog.Info("Goodbye.")
+}
+
+func createDownstream(cfg config.DownstreamConfig) (transport.Downstream, error) {
+	switch cfg.Type {
+	case "tcp":
+		return tcp.NewClient(cfg.Tcp.Address), nil
+	case "rtu":
+		return rtu.NewClient(cfg.Serial), nil
+	case "local":
+		return local.NewClient(cfg.Local), nil
+	default:
+		return nil, fmt.Errorf("unknown downstream type: %s", cfg.Type)
+	}
 }
 
 func setupLogger(cfg config.LogConfig) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Li Jinling. All rights reserved.
+// Copyright (c) 2026 Li Jinling. All rights reserved.
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
@@ -11,14 +11,7 @@ import (
 	"github.com/ffutop/modbus-gateway/modbus/crc"
 )
 
-const (
-	rtuMinSize = 4
-	rtuMaxSize = 256
-
-	rtuExceptionSize = 5
-)
-
-// rtuPackager implements Packager interface.
+// ApplicationDataUnit implements Packager interface.
 type ApplicationDataUnit struct {
 	SlaveID byte
 	Pdu     modbus.ProtocolDataUnit
@@ -28,8 +21,8 @@ type ApplicationDataUnit struct {
 func Decode(raw []byte) (adu *ApplicationDataUnit, err error) {
 	length := len(raw)
 	// Minimum size (including address, function and CRC)
-	if length < rtuMinSize {
-		err = fmt.Errorf("modbus: request length '%v' does not meet minimum '%v'", length, rtuMinSize)
+	if length < MinSize {
+		err = fmt.Errorf("modbus: request length '%v' does not meet minimum '%v'", length, MinSize)
 		return
 	}
 
@@ -57,8 +50,8 @@ func Decode(raw []byte) (adu *ApplicationDataUnit, err error) {
 //	CRC             : 2 bytes
 func (adu *ApplicationDataUnit) Encode() (raw []byte, err error) {
 	length := len(adu.Pdu.Data) + 4
-	if length > rtuMaxSize {
-		err = fmt.Errorf("modbus: length of data '%v' must not be bigger than '%v'", length, rtuMaxSize)
+	if length > MaxSize {
+		err = fmt.Errorf("modbus: length of data '%v' must not be bigger than '%v'", length, MaxSize)
 		return
 	}
 	raw = make([]byte, length)
@@ -81,8 +74,8 @@ func (adu *ApplicationDataUnit) Encode() (raw []byte, err error) {
 func (req *ApplicationDataUnit) Verify(resp *ApplicationDataUnit) (err error) {
 	length := len(resp.Pdu.Data) + 4
 	// Minimum size (including address, function and CRC)
-	if length < rtuMinSize {
-		err = fmt.Errorf("modbus: response length '%v' does not meet minimum '%v'", length, rtuMinSize)
+	if length < MinSize {
+		err = fmt.Errorf("modbus: response length '%v' does not meet minimum '%v'", length, MinSize)
 		return
 	}
 	// Slave address must match

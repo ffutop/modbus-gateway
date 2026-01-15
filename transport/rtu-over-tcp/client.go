@@ -1,35 +1,31 @@
-// Copyright (c) 2025 Li Jinling. All rights reserved.
+// Copyright (c) 2026 Li Jinling. All rights reserved.
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
-package tcp
+package rtuovertcp
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"log/slog"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ffutop/modbus-gateway/modbus"
+	rtupacket "github.com/ffutop/modbus-gateway/modbus/rtu"
 )
 
 const (
 	tcpTimeout = 10 * time.Second
 )
 
-// Client implements Downstream interface (Modbus TCP Client).
+// Client implements Downstream interface (Modbus RTU over TCP Client).
 type Client struct {
 	Address string
 	Timeout time.Duration
 
-	mu            sync.Mutex
-	conn          net.Conn
-	transactionID uint32 // Atomic counter
+	mu   sync.Mutex
+	conn net.Conn
 }
 
 // NewClient allocates and initializes a TCP Client.
@@ -45,19 +41,14 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 	mb.mu.Lock()
 	defer mb.mu.Unlock()
 
+	// Ensure connection is open
 	if err := mb.connect(); err != nil {
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("modbus: failed to connect to %s: %w", mb.Address, err)
 	}
 
-	// Transaction ID: Incrementing
-	tid := uint16(atomic.AddUint32(&mb.transactionID, 1))
-
-	adu := &ApplicationDataUnit{
-		TransactionID: tid,
-		ProtocolID:    0,
-		Length:        uint16(1 + len(pdu.Data)), // SlaveID + Data
-		SlaveID:       slaveID,                   // Unit Identifier
-		Pdu:           pdu,
+	adu := &rtupacket.ApplicationDataUnit{
+		SlaveID: slaveID,
+		Pdu:     pdu,
 	}
 
 	aduBytes, err := adu.Encode()
@@ -65,21 +56,33 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to encode ADU: %w", err)
 	}
 
-	if err := mb.conn.SetDeadline(time.Now().Add(mb.Timeout)); err != nil {
+	// Set Deadline for the interaction
+	if err = mb.conn.SetDeadline(time.Now().Add(mb.Timeout)); err != nil {
 		mb.close()
 		return modbus.ProtocolDataUnit{}, err
 	}
 
-	respBytes, err := mb.sendAndRead(mb.conn, aduBytes)
+	// Send Request
+	if _, err := mb.conn.Write(aduBytes); err != nil {
+		mb.close() // Close connection on write failure to force reconnect next time
+		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to write to connection: %w", err)
+	}
+
+	// Read Response
+	// We use the same RTU framing logic because RTU-over-TCP is just RTU frames sent over TCP.
+	respBytes, err := rtupacket.ReadResponse(slaveID, pdu.FunctionCode, mb.conn, time.Now().Add(mb.Timeout))
 	if err != nil {
-		mb.close() // Disconnect on IO error
-		return modbus.ProtocolDataUnit{}, err
+		mb.close() // Close connection on read failure
+		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Decode Response
-	respAdu, err := Decode(respBytes)
+	respAdu, err := rtupacket.Decode(respBytes)
 	if err != nil {
-		// Try to keep connection open on decode error, unless it's critical
+		// Framing/CRC error might not imply broken connection, but for safety in RTU-over-TCP (stream desync),
+		// it is often better to reset.
+		// However, purely bad data shouldn't necessarily kill the TCP link.
+		// We'll keep the connection unless it's a critical IO error, but ReadResponse would have caught IO errors.
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to decode response ADU: %w", err)
 	}
 
@@ -89,35 +92,6 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 	}
 
 	return respAdu.Pdu, nil
-}
-
-func (mb *Client) sendAndRead(conn net.Conn, aduRequest []byte) ([]byte, error) {
-	if _, err := conn.Write(aduRequest); err != nil {
-		return nil, err
-	}
-
-	// Read MBAP Header (first 6 bytes)
-	mbapHeader := make([]byte, 6)
-	if _, err := io.ReadFull(conn, mbapHeader); err != nil {
-		return nil, err
-	}
-
-	// Parse Length
-	length := int(mbapHeader[4])<<8 | int(mbapHeader[5])
-
-	// Read remaining bytes (UnitID + PDU)
-	payload := make([]byte, length)
-	if _, err := io.ReadFull(conn, payload); err != nil {
-		return nil, err
-	}
-
-	// Combine header and payload
-	response := make([]byte, 6+length)
-	copy(response, mbapHeader)
-	copy(response[6:], payload)
-
-	slog.Debug("recv from modbus tcp slave", "response", hex.EncodeToString(response))
-	return response, nil
 }
 
 // Connect implements Connector interface.

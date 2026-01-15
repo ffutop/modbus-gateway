@@ -80,18 +80,20 @@ gateways:
       - type: "tcp"
         tcp:
           address: "0.0.0.0:%d"
-    downstream:
-      type: "rtu"
-      serial:
-        device: "%s"
-        baud_rate: 19200
-        data_bits: 8
-        parity: "N"
-        stop_bits: 1
-        timeout: "1s"
+    downstreams:
+      - name: "rtu-slave"
+        type: "rtu"
+        slave_ids: "%d"
+        serial:
+          device: "%s"
+          baud_rate: 19200
+          data_bits: 8
+          parity: "N"
+          stop_bits: 1
+          timeout: "1s"
 log:
   level: "debug"
-`, gatewayTCPPort, pts0)
+`, gatewayTCPPort, slaveID, pts0)
 
 	configFile := filepath.Join(cwd, "test_config.yaml")
 	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
@@ -240,11 +242,13 @@ gateways:
       - type: "tcp"
         tcp:
           address: "127.0.0.1:%d"
-    downstream:
-      type: "rtu"
-      serial:
-        device: "/dev/nonexistent_device_test"
-        timeout: "100ms"
+    downstreams:
+      - name: "timeout-slave"
+        type: "rtu"
+        slave_ids: "1"
+        serial:
+          device: "/dev/nonexistent_device_test"
+          timeout: "100ms"
 `, timeoutTCPPort)
 
 	tmpConfigFile := filepath.Join(os.TempDir(), "timeout_config.yaml")
