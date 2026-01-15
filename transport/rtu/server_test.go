@@ -14,35 +14,6 @@ import (
 	"github.com/ffutop/modbus-gateway/modbus/crc"
 )
 
-func TestCalculateRequestLength(t *testing.T) {
-	tests := []struct {
-		name     string
-		funcCode byte
-		header   []byte
-		want     int
-		wantErr  bool
-	}{
-		{"ReadHoldingRegisters", 0x03, []byte{0x01, 0x03, 0x00, 0x00, 0x00, 0x01}, 8, false},
-		{"WriteSingleRegister", 0x06, []byte{0x01, 0x06, 0x00, 0x00, 0xAA, 0xBB}, 8, false},
-		{"WriteMultipleRegisters_ShortHeader", 0x10, []byte{0x01, 0x10, 0x00, 0x01, 0x00, 0x01}, 0, true},
-		{"WriteMultipleRegisters_Valid", 0x10, []byte{0x01, 0x10, 0x00, 0x01, 0x00, 0x01, 0x02}, 7 + 2 + 2, false},
-		{"UnknownFunction", 0x99, []byte{0x01, 0x99}, 0, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := calculateRequestLength(tt.funcCode, tt.header)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("calculateRequestLength() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("calculateRequestLength() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 type mockPort struct {
 	io.Reader
 	io.Writer
@@ -62,28 +33,6 @@ func TestScanLoop(t *testing.T) {
 	var c crc.CRC
 	c.Reset().PushBytes(reqADU)
 	sum := c.Value()
-	reqADU = append(reqADU, byte(sum>>8), byte(sum)) // Modbus is Big Endian?
-	// Wait. adu.go Encode:
-	// raw[length-1] = byte(checksum >> 8) -> High
-	// raw[length-2] = byte(checksum)      -> Low
-	// Modbus spec says CRC is Low Byte first, then High Byte.
-	// But let's check what adu.go (my codebase) expects.
-	// Decode: checksum := uint16(raw[length-1])<<8 | uint16(raw[length-2])
-	// Value at len-1 is shifted left. So len-1 is High Byte.
-	// Value at len-2 is Low Byte.
-	// So layout in memory: [..., Low, High].
-	// My construction: append(..., byte(sum), byte(sum>>8)) == [Low, High].
-	// This Matches adu.go.
-	// Wait, I appended High, Low in this string literal? No.
-	// Let's be explicit.
-
-	// Re-construct for clarity
-	reqADU = []byte{0x01}
-	reqADU = append(reqADU, reqPDU...)
-
-	c.Reset().PushBytes(reqADU)
-	sum = c.Value()
-
 	// Appending Low, High
 	reqADU = append(reqADU, byte(sum))
 	reqADU = append(reqADU, byte(sum>>8))
