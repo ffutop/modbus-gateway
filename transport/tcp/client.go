@@ -11,14 +11,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ffutop/modbus-gateway/modbus"
 )
-
-// TODO:
-// Consider maintaining persistent connections (keep-alive, reconnection strategy, etc.)
 
 const (
 	tcpTimeout = 10 * time.Second
@@ -29,6 +27,8 @@ type Client struct {
 	Address string
 	Timeout time.Duration
 
+	mu            sync.Mutex
+	conn          net.Conn
 	transactionID uint32 // Atomic counter
 }
 
@@ -42,6 +42,13 @@ func NewClient(address string) *Client {
 
 // Send sends a PDU to a Slave (Downstream) and returns the response PDU.
 func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+
+	if err := mb.connect(); err != nil {
+		return modbus.ProtocolDataUnit{}, fmt.Errorf("modbus: failed to connect to %s: %w", mb.Address, err)
+	}
+
 	// Transaction ID: Incrementing
 	tid := uint16(atomic.AddUint32(&mb.transactionID, 1))
 
@@ -58,25 +65,21 @@ func (mb *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDat
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to encode ADU: %w", err)
 	}
 
-	// Dialing a new connection for simplicity
-	conn, err := net.DialTimeout("tcp", mb.Address, mb.Timeout)
-	if err != nil {
-		return modbus.ProtocolDataUnit{}, fmt.Errorf("modbus: failed to connect to %s: %w", mb.Address, err)
-	}
-	defer conn.Close()
-
-	if err = conn.SetDeadline(time.Now().Add(mb.Timeout)); err != nil {
+	if err := mb.conn.SetDeadline(time.Now().Add(mb.Timeout)); err != nil {
+		mb.close()
 		return modbus.ProtocolDataUnit{}, err
 	}
 
-	respBytes, err := mb.sendAndRead(conn, aduBytes)
+	respBytes, err := mb.sendAndRead(mb.conn, aduBytes)
 	if err != nil {
+		mb.close() // Disconnect on IO error
 		return modbus.ProtocolDataUnit{}, err
 	}
 
 	// Decode Response
 	respAdu, err := Decode(respBytes)
 	if err != nil {
+		// Try to keep connection open on decode error, unless it's critical
 		return modbus.ProtocolDataUnit{}, fmt.Errorf("failed to decode response ADU: %w", err)
 	}
 
@@ -119,12 +122,36 @@ func (mb *Client) sendAndRead(conn net.Conn, aduRequest []byte) ([]byte, error) 
 
 // Connect implements Connector interface.
 func (mb *Client) Connect(ctx context.Context) error {
-	// Check if address is valid
-	_, err := net.ResolveTCPAddr("tcp", mb.Address)
-	return err
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+	return mb.connect()
 }
 
 // Close implements Connector interface.
 func (mb *Client) Close() error {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+	mb.close()
 	return nil
+}
+
+// connect ensures there is an active connection. Caller must hold the mutex.
+func (mb *Client) connect() error {
+	if mb.conn != nil {
+		return nil
+	}
+	conn, err := net.DialTimeout("tcp", mb.Address, mb.Timeout)
+	if err != nil {
+		return err
+	}
+	mb.conn = conn
+	return nil
+}
+
+// close closes the connection and resets the state. Caller must hold the mutex.
+func (mb *Client) close() {
+	if mb.conn != nil {
+		mb.conn.Close()
+		mb.conn = nil
+	}
 }
