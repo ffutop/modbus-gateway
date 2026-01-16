@@ -19,6 +19,7 @@ import (
 	"github.com/ffutop/modbus-gateway/transport"
 	"github.com/ffutop/modbus-gateway/transport/local"
 	"github.com/ffutop/modbus-gateway/transport/rtu"
+	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
 	"github.com/ffutop/modbus-gateway/transport/tcp"
 )
 
@@ -102,6 +103,8 @@ func main() {
 				us = tcp.NewServer(usCfg.Tcp.Address)
 			case "rtu":
 				us = rtu.NewServer(usCfg.Serial)
+			case "rtu-over-tcp":
+				us = rtuovertcp.NewServer(usCfg.Tcp.Address)
 			default:
 				slog.Error("Unknown upstream type", "type", usCfg.Type, "gateway", gwCfg.Name)
 				continue
@@ -147,6 +150,8 @@ func createDownstream(cfg config.DownstreamConfig) (transport.Downstream, error)
 		return tcp.NewClient(cfg.Tcp.Address), nil
 	case "rtu":
 		return rtu.NewClient(cfg.Serial), nil
+	case "rtu-over-tcp":
+		return rtuovertcp.NewClient(cfg.Tcp.Address), nil
 	case "local":
 		return local.NewClient(cfg.Local), nil
 	default:
