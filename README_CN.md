@@ -363,11 +363,15 @@ go build
  
 ### 配置文件结构
  
-配置文件支持定义多个网关 (`gateways`)。每个网关可以有多个上游主站 (`upstreams`) 和一个下游从站 (`downstream`)。
+配置文件支持定义多个网关 (`gateways`)。每个网关可以有多个上游主站 (`upstreams`) 和一个或多个下游从站 (`downstreams`)。通过每个下游的 `slave_ids` 字段定义路由规则——Slave ID 匹配的请求将被转发到该下游。
  
  #### 示例 `config.yaml`
  
  ```yaml
+ pprof:
+   enabled: false
+   address: "localhost:6060"
+
  gateways:
    - name: "gateway-1"
      # 上游: 谁连接到网关 (Modbus Masters)
@@ -375,28 +379,36 @@ go build
        - type: "tcp"
          tcp:
            address: "0.0.0.0:502"
-     # 下游: 网关连接到谁 (Modbus Slave)
-     downstream:
-       type: "rtu"
-       serial:
-         device: "/dev/ttyUSB0"
-         baud_rate: 19200
-         data_bits: 8
-         parity: "N"
-         stop_bits: 1
-         timeout: "500ms"
- 
+     # 下游: 网关连接到谁 (Modbus Slaves)
+     # slave_ids 支持单个值 ("1")、逗号分隔列表 ("1,2,3") 和范围 ("1-10")
+     downstreams:
+       - type: "rtu"
+         slave_ids: "1-10"      # 将 Slave ID 1~10 的请求路由到此 RTU 设备
+         serial:
+           device: "/dev/ttyUSB0"
+           baud_rate: 19200
+           data_bits: 8
+           parity: "N"
+           stop_bits: 1
+           timeout: "500ms"
+       - type: "local"
+         slave_ids: "100"       # 将 Slave ID 100 的请求路由到内置本地从站
+         local:
+           persistence:
+             type: "mmap"
+             path: "/data/"
+
    # 示例: 另一个网关实例，TCP 转 TCP
    - name: "gateway-tcp-bridge"
      upstreams:
        - type: "tcp"
          tcp:
            address: "0.0.0.0:503"
-     downstream:
-       type: "tcp"
-       tcp:
-         address: "192.168.1.100:502"
- 
+     downstreams:
+       - type: "tcp"
+         tcp:
+           address: "192.168.1.100:502"
+
  log:
    level: "info" # debug, info, warn, error
    file: ""      # 为空输出到控制台

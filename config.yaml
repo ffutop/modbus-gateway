@@ -1,17 +1,37 @@
+pprof:
+  enabled: false
+  address: "localhost:6060"
+
 gateways:
-  - name: "test-gateway"
+  - name: "modbus-slave"
+    # Upstreams: Who connects to the gateway (Modbus Masters)
     upstreams:
       - type: "tcp"
         tcp:
           address: "0.0.0.0:33502"
-    downstream:
-      type: "rtu"
-      serial:
-        device: "/tmp/pts0"
-        baud_rate: 19200
-        data_bits: 8
-        parity: "N"
-        stop_bits: 1
-        timeout: "1s"
+      - type: "rtu-over-tcp"
+        tcp:
+          address: "0.0.0.0:502"
+    # Downstreams: Who the gateway connects to (Modbus Slave)
+    downstreams:
+      - type: "local"
+        slave_ids: "100"    # Route `SlaveID=100` packets to this gateway
+        local:
+          persistence:
+            type: "mmap"
+            path: "/data/"
+
+  # Example: another gateway instance, TCP proxy (TCP to TCP)
+  - name: "gateway-tcp-bridge"
+    upstreams:
+      - type: "tcp"
+        tcp:
+          address: "0.0.0.0:503"
+    downstreams:
+      - type: "tcp"
+        tcp:
+          address: "192.168.1.100:502"
+
 log:
-  level: "debug"
+  level: "info" # debug, info, warn, error
+  file: ""      # If empty, output to the console.

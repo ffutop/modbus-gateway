@@ -364,40 +364,53 @@ Use the `-config` flag to specify the configuration file path:
  
  ### Configuration Structure
  
- The configuration file supports defining multiple gateways (`gateways`). Each gateway can have multiple upstream masters (`upstreams`) and one downstream slave (`downstream`).
+ The configuration file supports defining multiple gateways (`gateways`). Each gateway can have multiple upstream masters (`upstreams`) and one or more downstream slaves (`downstreams`). Use the `slave_ids` field on each downstream to define routing rules — requests whose Slave ID matches are forwarded to that downstream. 
  
  #### Example `config.yaml`
  
  ```yaml
+ pprof:
+   enabled: false
+   address: "localhost:6060"
+
  gateways:
    - name: "gateway-1"
-     # Upstream: Who connects to the gateway (Modbus Masters)
+     # Upstreams: Who connects to the gateway (Modbus Masters)
      upstreams:
        - type: "tcp"
          tcp:
            address: "0.0.0.0:502"
-     # Downstream: Who the gateway connects to (Modbus Slave)
-     downstream:
-       type: "rtu"
-       serial:
-         device: "/dev/ttyUSB0"
-         baud_rate: 19200
-         data_bits: 8
-         parity: "N"
-         stop_bits: 1
-         timeout: "500ms"
- 
+     # Downstreams: Who the gateway connects to (Modbus Slaves)
+     # slave_ids supports single values ("1"), comma-separated lists ("1,2,3"),
+     # and ranges ("1-10").
+     downstreams:
+       - type: "rtu"
+         slave_ids: "1-10"      # Route Slave ID 1~10 to this RTU device
+         serial:
+           device: "/dev/ttyUSB0"
+           baud_rate: 19200
+           data_bits: 8
+           parity: "N"
+           stop_bits: 1
+           timeout: "500ms"
+       - type: "local"
+         slave_ids: "100"       # Route Slave ID 100 to the built-in local slave
+         local:
+           persistence:
+             type: "mmap"
+             path: "/data/"
+
    # Example: Another gateway instance, TCP to TCP bridge
    - name: "gateway-tcp-bridge"
      upstreams:
        - type: "tcp"
          tcp:
            address: "0.0.0.0:503"
-     downstream:
-       type: "tcp"
-       tcp:
-         address: "192.168.1.100:502"
- 
+     downstreams:
+       - type: "tcp"
+         tcp:
+           address: "192.168.1.100:502"
+
  log:
    level: "info" # debug, info, warn, error
    file: ""      # empty for stdout

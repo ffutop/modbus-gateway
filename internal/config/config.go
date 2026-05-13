@@ -16,12 +16,19 @@ import (
 type Config struct {
 	Gateways []GatewayConfig `mapstructure:"gateways"`
 	Log      LogConfig       `mapstructure:"log"`
+	Pprof    PprofConfig     `mapstructure:"pprof"`
 }
 
 // LogConfig defines logging configuration
 type LogConfig struct {
 	Level string `mapstructure:"level"` // debug, info, warn, error
 	File  string `mapstructure:"file"`  // Log file path
+}
+
+// PprofConfig defines pprof configuration
+type PprofConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Address string `mapstructure:"address"` // e.g. "localhost:6060"
 }
 
 // GatewayConfig defines a single gateway instance
@@ -33,17 +40,17 @@ type GatewayConfig struct {
 
 // UpstreamConfig defines a master connecting to the gateway
 type UpstreamConfig struct {
-	Type   string       `mapstructure:"type"`   // "tcp" or "rtu"
-	Tcp    TcpConfig    `mapstructure:"tcp"`    // Used if Type is "tcp"
+	Type   string       `mapstructure:"type"`   // "tcp", "rtu", "rtu-over-tcp"
+	Tcp    TcpConfig    `mapstructure:"tcp"`    // Used if Type is "tcp" or "rtu-over-tcp"
 	Serial SerialConfig `mapstructure:"serial"` // Used if Type is "rtu"
 }
 
 // DownstreamConfig defines the slave the gateway connects to
 type DownstreamConfig struct {
 	Name     string       `mapstructure:"name"`      // Optional name for logging
-	Type     string       `mapstructure:"type"`      // "tcp", "rtu", or "local"
+	Type     string       `mapstructure:"type"`      // "tcp", "rtu", "rtu-over-tcp", "local"
 	SlaveIDs string       `mapstructure:"slave_ids"` // Routing rules: "1", "1,2", "1-10"
-	Tcp      TcpConfig    `mapstructure:"tcp"`       // Used if Type is "tcp"
+	Tcp      TcpConfig    `mapstructure:"tcp"`       // Used if Type is "tcp" or "rtu-over-tcp"
 	Serial   SerialConfig `mapstructure:"serial"`    // Used if Type is "rtu"
 	Local    LocalConfig  `mapstructure:"local"`     // Used if Type is "local"
 }

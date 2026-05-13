@@ -9,6 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof" // Register pprof handlers
 	"os"
 	"os/signal"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/ffutop/modbus-gateway/transport"
 	"github.com/ffutop/modbus-gateway/transport/local"
 	"github.com/ffutop/modbus-gateway/transport/rtu"
+	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
 	"github.com/ffutop/modbus-gateway/transport/tcp"
 )
 
@@ -34,6 +37,19 @@ func main() {
 	}
 
 	setupLogger(cfg.Log)
+
+	if cfg.Pprof.Enabled {
+		addr := cfg.Pprof.Address
+		if addr == "" {
+			addr = "localhost:6060"
+		}
+		go func() {
+			slog.Info("Starting pprof server", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				slog.Error("Failed to start pprof server", "err", err)
+			}
+		}()
+	}
 
 	slog.Info("Starting Modbus Gateway...")
 
@@ -102,6 +118,8 @@ func main() {
 				us = tcp.NewServer(usCfg.Tcp.Address)
 			case "rtu":
 				us = rtu.NewServer(usCfg.Serial)
+			case "rtu-over-tcp":
+				us = rtuovertcp.NewServer(usCfg.Tcp.Address)
 			default:
 				slog.Error("Unknown upstream type", "type", usCfg.Type, "gateway", gwCfg.Name)
 				continue
@@ -136,6 +154,7 @@ func main() {
 	<-sigChan
 
 	slog.Info("Shutting down...")
+
 	cancel()
 	wg.Wait()
 	slog.Info("Goodbye.")
@@ -147,6 +166,8 @@ func createDownstream(cfg config.DownstreamConfig) (transport.Downstream, error)
 		return tcp.NewClient(cfg.Tcp.Address), nil
 	case "rtu":
 		return rtu.NewClient(cfg.Serial), nil
+	case "rtu-over-tcp":
+		return rtuovertcp.NewClient(cfg.Tcp.Address), nil
 	case "local":
 		return local.NewClient(cfg.Local), nil
 	default:
