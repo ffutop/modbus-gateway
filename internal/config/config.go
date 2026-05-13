@@ -16,12 +16,19 @@ import (
 type Config struct {
 	Gateways []GatewayConfig `mapstructure:"gateways"`
 	Log      LogConfig       `mapstructure:"log"`
+	Pprof    PprofConfig     `mapstructure:"pprof"`
 }
 
 // LogConfig defines logging configuration
 type LogConfig struct {
 	Level string `mapstructure:"level"` // debug, info, warn, error
 	File  string `mapstructure:"file"`  // Log file path
+}
+
+// PprofConfig defines pprof configuration
+type PprofConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Address string `mapstructure:"address"` // e.g. "localhost:6060"
 }
 
 // GatewayConfig defines a single gateway instance

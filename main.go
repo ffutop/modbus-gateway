@@ -9,6 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof" // Register pprof handlers
 	"os"
 	"os/signal"
 	"sync"
@@ -35,6 +37,19 @@ func main() {
 	}
 
 	setupLogger(cfg.Log)
+
+	if cfg.Pprof.Enabled {
+		addr := cfg.Pprof.Address
+		if addr == "" {
+			addr = "localhost:6060"
+		}
+		go func() {
+			slog.Info("Starting pprof server", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				slog.Error("Failed to start pprof server", "err", err)
+			}
+		}()
+	}
 
 	slog.Info("Starting Modbus Gateway...")
 
@@ -139,6 +154,7 @@ func main() {
 	<-sigChan
 
 	slog.Info("Shutting down...")
+
 	cancel()
 	wg.Wait()
 	slog.Info("Goodbye.")
