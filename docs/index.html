@@ -159,6 +159,7 @@
                     <a href="#architecture" class="hover:text-zinc-950 transition-colors" data-en="Architecture" data-cn="架构">Architecture</a>
                     <a href="#features" class="hover:text-zinc-950 transition-colors" data-en="Features" data-cn="特性">Features</a>
                     <a href="#usage" class="hover:text-zinc-950 transition-colors" data-en="Usage" data-cn="使用">Usage</a>
+                    <a href="#config-reference" class="hover:text-zinc-950 transition-colors" data-en="Config" data-cn="配置">Config</a>
                     <a href="https://github.com/ffutop/modbus-gateway" target="_blank" class="hover:text-zinc-950 transition-colors">
                         <i class="fa-brands fa-github text-lg"></i>
                     </a>
@@ -176,18 +177,18 @@
             <div class="container max-w-screen-xl mx-auto px-4 md:px-8 flex flex-col items-center gap-4 text-center">
 
                 <div class="rounded-2xl bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-800 mb-2">
-                    <span data-en="v1.0.0 Released" data-cn="v1.0.0 已发布">v1.0.0 Released</span>
+                    <span data-en="v0.4.0 Released" data-cn="v0.4.0 已发布">v0.4.0 Released</span>
                 </div>
 
                 <h1 class="font-bold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter text-zinc-950 max-w-4xl">
                     <span class="font-risque block mb-2">Modbus Gateway</span>
-                    <span class="text-zinc-400 font-sans text-3xl sm:text-5xl font-semibold" data-en="TCP to RTU Bridge" data-cn="TCP 转 RTU 桥接器">TCP to RTU Bridge</span>
+                    <span class="text-zinc-400 font-sans text-3xl sm:text-5xl font-semibold" data-en="Multi-Master · Multi-Slave Router" data-cn="多主多从 · 协议路由器">Multi-Master · Multi-Slave Router</span>
                 </h1>
 
                 <p class="max-w-[42rem] leading-normal text-zinc-500 sm:text-xl sm:leading-8 font-light">
-                    <span data-en="A high-performance, configurable gateway written in Go. Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts." 
-                          data-cn="使用 Go 语言编写的高性能、可配置网关。支持多个 Modbus TCP 主站无冲突地连接到单个串行 RTU 从站。">
-                        A high-performance, configurable gateway written in Go. Connect multiple Modbus TCP masters to a single Serial RTU slave without conflicts.
+                    <span data-en="A high-performance Modbus gateway written in Go. Supports arbitrary TCP / RTU / RTU-over-TCP protocol bridging, Slave ID-based routing across multiple downstreams, and a built-in local virtual slave."
+                          data-cn="使用 Go 语言编写的高性能 Modbus 网关。支持 TCP / RTU / RTU-over-TCP 任意协议桥接、基于 Slave ID 的多下游路由，以及内置本地虚拟从站。">
+                        A high-performance Modbus gateway written in Go. Supports arbitrary TCP / RTU / RTU-over-TCP protocol bridging, Slave ID-based routing across multiple downstreams, and a built-in local virtual slave.
                     </span>
                 </p>
 
@@ -206,58 +207,61 @@
         <section id="architecture" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24 border-t border-zinc-100">
             <div class="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-12">
                 <h2 class="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-4xl tracking-tight" data-en="Architecture" data-cn="架构设计">Architecture</h2>
-                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Serialized concurrency control ensures bus stability." data-cn="串行化并发控制确保总线稳定性。">
-                    Serialized concurrency control ensures bus stability.
+                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Slave ID routing dispatches each request to the correct downstream. Serialized queuing prevents bus conflicts." data-cn="基于 Slave ID 的路由将请求分发到对应下游，串行队列防止总线冲突。">
+                    Slave ID routing dispatches each request to the correct downstream. Serialized queuing prevents bus conflicts.
                 </p>
             </div>
 
             <!-- The Schematic Diagram -->
-            <div class="flex flex-col md:flex-row items-center justify-center gap-6 py-8 select-none font-mono text-sm">
+            <div class="overflow-x-auto py-8">
+              <div class="flex flex-col md:flex-row items-stretch justify-center gap-0 select-none font-mono text-sm mx-auto" style="min-width:680px;max-width:900px;">
 
-                <!-- Left: TCP Clients -->
-                <div class="flex flex-col gap-3 w-full md:w-64">
-                    <div class="diagram-box border-dashed border-2 p-4 flex flex-col gap-2 bg-zinc-50/50">
-                        <div class="text-center text-zinc-400 text-xs font-sans font-semibold uppercase tracking-wider mb-1">TCP Masters</div>
-                        <div class="diagram-box p-3 text-center shadow-sm">Client 1</div>
-                        <div class="diagram-box p-3 text-center shadow-sm">Client 2</div>
-                        <div class="diagram-box p-3 text-center shadow-sm">Client 3</div>
+                <!-- Left: Upstreams -->
+                <div class="flex flex-col gap-3 w-full md:w-52">
+                    <div class="diagram-box border-dashed border-2 p-4 flex flex-col gap-2 bg-zinc-50/50 h-full">
+                        <div class="text-center text-zinc-400 text-xs font-sans font-semibold uppercase tracking-wider mb-1">Upstreams</div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">TCP Master<br><span class="text-zinc-400 font-sans">0.0.0.0:502</span></div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">RTU-over-TCP<br><span class="text-zinc-400 font-sans">0.0.0.0:503</span></div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">RTU Master<br><span class="text-zinc-400 font-sans">/dev/ttyS0</span></div>
                     </div>
                 </div>
 
-                <!-- Arrow TCP -->
-                <div class="flex flex-col items-center text-zinc-400 gap-1">
-                    <span class="text-[10px] font-sans uppercase tracking-wider">TCP/IP</span>
+                <!-- Arrow left -->
+                <div class="flex flex-col items-center justify-center text-zinc-400 gap-1 px-3">
                     <i class="fa-solid fa-arrow-right hidden md:block text-xl"></i>
-                    <i class="fa-solid fa-arrow-down md:hidden text-xl"></i>
+                    <i class="fa-solid fa-arrow-down md:hidden text-xl my-2"></i>
                 </div>
 
                 <!-- Center: Gateway -->
-                <div class="diagram-box-main p-8 rounded-xl shadow-2xl w-full md:w-72 text-center relative overflow-hidden group">
+                <div class="diagram-box-main p-6 rounded-xl shadow-2xl w-full md:w-60 text-center relative overflow-hidden flex-shrink-0">
                     <div class="absolute top-0 left-0 w-full h-1 bg-zinc-700"></div>
-                    <i class="fa-solid fa-server text-4xl mb-4 text-white"></i>
-                    <h3 class="font-bold text-lg font-risque tracking-wide">Gateway</h3>
-                    <div class="mt-4 flex flex-col gap-1 opacity-80">
+                    <i class="fa-solid fa-server text-3xl mb-3 text-white"></i>
+                    <h3 class="font-bold text-base font-risque tracking-wide">Gateway</h3>
+                    <div class="mt-3 flex flex-col gap-1 opacity-80">
                         <span class="text-xs bg-zinc-800 rounded px-2 py-1">Queue Buffer</span>
                         <span class="text-xs bg-zinc-800 rounded px-2 py-1">Serializer</span>
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">SlaveID Router</span>
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Local Slave</span>
                     </div>
                 </div>
 
-                <!-- Arrow Serial -->
-                <div class="flex flex-col items-center text-zinc-400 gap-1">
-                    <span class="text-[10px] font-sans uppercase tracking-wider">RS485</span>
+                <!-- Arrow right -->
+                <div class="flex flex-col items-center justify-center text-zinc-400 gap-1 px-3">
                     <i class="fa-solid fa-arrow-right hidden md:block text-xl"></i>
-                    <i class="fa-solid fa-arrow-down md:hidden text-xl"></i>
+                    <i class="fa-solid fa-arrow-down md:hidden text-xl my-2"></i>
                 </div>
 
-                <!-- Right: Slave -->
-                <div class="diagram-box p-6 w-full md:w-64 h-48 flex flex-col justify-center items-center text-center bg-zinc-50">
-                    <div class="w-16 h-16 border-2 border-zinc-800 rounded-full flex items-center justify-center mb-3">
-                        <i class="fa-solid fa-microchip text-2xl text-zinc-800"></i>
+                <!-- Right: Downstreams -->
+                <div class="flex flex-col gap-3 w-full md:w-52">
+                    <div class="diagram-box border-dashed border-2 p-4 flex flex-col gap-2 bg-zinc-50/50 h-full">
+                        <div class="text-center text-zinc-400 text-xs font-sans font-semibold uppercase tracking-wider mb-1">Downstreams</div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">RTU Slave<br><span class="text-zinc-400 font-sans">slave_ids: 1-10</span></div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">TCP Slave<br><span class="text-zinc-400 font-sans">slave_ids: 11-20</span></div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">Local Slave<br><span class="text-zinc-400 font-sans">slave_ids: 100</span></div>
                     </div>
-                    <div class="font-bold text-zinc-900">RTU Slave</div>
-                    <div class="text-xs text-zinc-500 mt-1">/dev/ttyUSB0</div>
                 </div>
 
+              </div>
             </div>
         </section>
 
@@ -265,13 +269,32 @@
         <section id="features" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24">
             <div class="grid justify-center gap-4 sm:grid-cols-2 md:max-w-[64rem] md:grid-cols-3 mx-auto">
 
-                <!-- Feature Items -->
                 <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
                     <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
                         <i class="fa-solid fa-right-left text-2xl text-zinc-900"></i>
                         <div class="space-y-2">
-                            <h3 class="font-bold" data-en="Protocol Conversion" data-cn="协议转换">Protocol Conversion</h3>
-                            <p class="text-sm text-zinc-500" data-en="Seamless conversion between Modbus TCP and Modbus RTU." data-cn="实现 Modbus TCP 到 Modbus RTU 的无缝转换。">Seamless conversion between Modbus TCP and Modbus RTU.</p>
+                            <h3 class="font-bold" data-en="Full Protocol Support" data-cn="全协议支持">Full Protocol Support</h3>
+                            <p class="text-sm text-zinc-500" data-en="TCP, RTU, and RTU-over-TCP on both upstream and downstream, mixed freely." data-cn="上游与下游均支持 TCP、RTU、RTU-over-TCP，可任意组合。">TCP, RTU, and RTU-over-TCP on both upstream and downstream, mixed freely.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-code-branch text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Slave ID Routing" data-cn="Slave ID 路由">Slave ID Routing</h3>
+                            <p class="text-sm text-zinc-500" data-en="Route requests to different downstreams by Slave ID. Supports single values, ranges (1-10), and comma-separated lists." data-cn="按 Slave ID 将请求路由到不同下游，支持单值、范围（1-10）和逗号分隔列表。">Route requests to different downstreams by Slave ID. Supports ranges and lists.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-database text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Local Slave" data-cn="本地虚拟从站">Local Slave</h3>
+                            <p class="text-sm text-zinc-500" data-en="Built-in virtual Modbus slave with pluggable persistence: memory, file, or high-performance mmap." data-cn="内置虚拟 Modbus 从站，支持可插拔持久化：内存、文件或高性能 mmap。">Built-in virtual slave with memory, file, or mmap persistence.</p>
                         </div>
                     </div>
                 </div>
@@ -280,18 +303,8 @@
                     <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
                         <i class="fa-solid fa-layer-group text-2xl text-zinc-900"></i>
                         <div class="space-y-2">
-                            <h3 class="font-bold" data-en="Concurrency" data-cn="并发处理">Concurrency</h3>
-                            <p class="text-sm text-zinc-500" data-en="Multiple TCP clients connecting simultaneously via serialization queue." data-cn="支持多个 TCP 客户端同时连接，通过内部队列串行化。">Multiple TCP clients supported.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
-                        <i class="fa-solid fa-sliders text-2xl text-zinc-900"></i>
-                        <div class="space-y-2">
-                            <h3 class="font-bold" data-en="Flexible Config" data-cn="灵活配置">Flexible Config</h3>
-                            <p class="text-sm text-zinc-500" data-en="Configure via CLI arguments or YAML files." data-cn="支持通过命令行参数和 YAML 配置文件配置。">CLI arguments or YAML files.</p>
+                            <h3 class="font-bold" data-en="Multi-Master Concurrency" data-cn="多主并发">Multi-Master Concurrency</h3>
+                            <p class="text-sm text-zinc-500" data-en="Multiple masters connect simultaneously. Per-downstream serialization queues prevent RS485 bus conflicts." data-cn="多主站同时连接，每个下游独立的串行化队列防止 RS485 总线冲突。">Multiple masters with per-downstream serialization queues.</p>
                         </div>
                     </div>
                 </div>
@@ -301,27 +314,17 @@
                         <i class="fa-solid fa-plug text-2xl text-zinc-900"></i>
                         <div class="space-y-2">
                             <h3 class="font-bold" data-en="RS485 Control" data-cn="RS485 控制">RS485 Control</h3>
-                            <p class="text-sm text-zinc-500" data-en="Full support for RTS signal control." data-cn="内置对 RTS 信号控制的完整支持。">Full support for RTS signal control.</p>
+                            <p class="text-sm text-zinc-500" data-en="Full RTS signal timing control with configurable delays, adapting to industrial serial converters." data-cn="完整的 RTS 信号时序控制，可配置延迟，适配各类工业串口转接器。">Full RTS timing control for industrial serial converters.</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
                     <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
-                        <i class="fa-solid fa-file-lines text-2xl text-zinc-900"></i>
+                        <i class="fa-solid fa-chart-line text-2xl text-zinc-900"></i>
                         <div class="space-y-2">
-                            <h3 class="font-bold" data-en="Logging" data-cn="日志系统">Logging</h3>
-                            <p class="text-sm text-zinc-500" data-en="Configurable levels (debug, info, warn) and targets." data-cn="可配置的日志级别和输出目标。">Configurable levels and targets.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
-                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
-                        <i class="fa-solid fa-link text-2xl text-zinc-900"></i>
-                        <div class="space-y-2">
-                            <h3 class="font-bold" data-en="Auto Reconnect" data-cn="自动重连">Auto Reconnect</h3>
-                            <p class="text-sm text-zinc-500" data-en="Handles serial port disconnections and timeouts automatically." data-cn="自动处理串口断开和超时。">Handles serial port disconnections.</p>
+                            <h3 class="font-bold" data-en="pprof Profiling" data-cn="pprof 性能分析">pprof Profiling</h3>
+                            <p class="text-sm text-zinc-500" data-en="Optional Go pprof HTTP endpoint for CPU, heap, and goroutine diagnostics via go tool pprof." data-cn="可选的 Go pprof HTTP 端点，通过 go tool pprof 进行 CPU、堆内存、Goroutine 诊断。">Optional pprof endpoint for CPU / heap / goroutine diagnostics.</p>
                         </div>
                     </div>
                 </div>
@@ -355,8 +358,8 @@
                         <div>
                             <p class="text-sm font-medium text-zinc-500 mb-2" data-en="2. Run" data-cn="2. 运行">2. Run</p>
                             <div class="bg-zinc-950 text-zinc-50 rounded-lg p-4 font-mono text-sm shadow-lg border border-zinc-800">
-                                <div class="text-zinc-400 text-xs mb-2 italic"># Listen on port 5020, Device /dev/ttyUSB0</div>
-                                <code class="break-all">./modbus-gateway -p /dev/ttyUSB0 -s 9600 -P 5020 -v debug</code>
+                                <div class="text-zinc-400 text-xs mb-2 italic"># Start with a config file</div>
+                                <code class="break-all">./modbus-gateway -config config.yaml</code>
                             </div>
                         </div>
                     </div>
@@ -369,31 +372,201 @@
                         <span data-en="Configuration" data-cn="配置">Configuration</span>
                     </h3>
 
-                    <p class="text-sm text-zinc-500 mb-4" data-en="Use config.yaml for advanced settings." data-cn="使用 config.yaml 进行高级设置。">Use <code>config.yaml</code> for advanced settings.</p>
+                    <p class="text-sm text-zinc-500 mb-4" data-en="All behavior is driven by config.yaml. See the Configuration Reference below for full field docs." data-cn="所有行为由 config.yaml 驱动，完整字段说明请参阅下方配置参考。">All behavior is driven by <code>config.yaml</code>. See the <a href="#config-reference" class="underline">Configuration Reference</a> below.</p>
 
-                    <div class="bg-white text-zinc-800 rounded-lg p-4 font-mono text-sm shadow-sm border border-zinc-200 h-[300px] overflow-y-auto">
-<pre><code><span class="text-zinc-400"># TCP Server</span>
-<span class="text-purple-600">tcp_address:</span> "0.0.0.0"
-<span class="text-purple-600">tcp_port:</span> 502
-<span class="text-purple-600">max_conns:</span> 32
+                    <div class="bg-white text-zinc-800 rounded-lg p-4 font-mono text-sm shadow-sm border border-zinc-200 h-[340px] overflow-y-auto">
+<pre><code><span class="text-zinc-400"># pprof profiling server (optional)</span>
+<span class="text-purple-600">pprof:</span>
+  <span class="text-purple-600">enabled:</span> false
+  <span class="text-purple-600">address:</span> "localhost:6060"
 
-<span class="text-zinc-400"># Serial/RTU</span>
-<span class="text-purple-600">device:</span> "/dev/ttyUSB0"
-<span class="text-purple-600">baud_rate:</span> 19200
-<span class="text-purple-600">data_bits:</span> 8
-<span class="text-purple-600">parity:</span> "N"
-<span class="text-purple-600">stop_bits:</span> 1
-<span class="text-purple-600">timeout:</span> 500ms
+<span class="text-purple-600">gateways:</span>
+  - <span class="text-purple-600">name:</span> "gateway-1"
+    <span class="text-purple-600">upstreams:</span>
+      - <span class="text-purple-600">type:</span> "tcp"
+        <span class="text-purple-600">tcp:</span>
+          <span class="text-purple-600">address:</span> "0.0.0.0:502"
+    <span class="text-purple-600">downstreams:</span>
+      - <span class="text-purple-600">type:</span> "rtu"
+        <span class="text-purple-600">slave_ids:</span> "1-10"
+        <span class="text-purple-600">serial:</span>
+          <span class="text-purple-600">device:</span> "/dev/ttyUSB0"
+          <span class="text-purple-600">baud_rate:</span> 19200
+          <span class="text-purple-600">data_bits:</span> 8
+          <span class="text-purple-600">parity:</span> "N"
+          <span class="text-purple-600">stop_bits:</span> 1
+          <span class="text-purple-600">timeout:</span> "500ms"
+      - <span class="text-purple-600">type:</span> "local"
+        <span class="text-purple-600">slave_ids:</span> "100"
+        <span class="text-purple-600">local:</span>
+          <span class="text-purple-600">persistence:</span>
+            <span class="text-purple-600">type:</span> "mmap"
+            <span class="text-purple-600">path:</span> "/data/"
 
-<span class="text-zinc-400"># RS485</span>
-<span class="text-purple-600">rs485:</span>
-  <span class="text-purple-600">enabled:</span> true
-  <span class="text-purple-600">delay_rts_before_send:</span> 2ms</code></pre>
+<span class="text-purple-600">log:</span>
+  <span class="text-purple-600">level:</span> "info"
+  <span class="text-purple-600">file:</span> ""</code></pre>
                     </div>
                 </div>
 
             </div>
         </section>
+
+        <!-- Configuration Reference -->
+        <section id="config-reference" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24">
+            <div class="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-12">
+                <h2 class="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-4xl tracking-tight" data-en="Configuration Reference" data-cn="配置参考">Configuration Reference</h2>
+                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Complete field reference for config.yaml." data-cn="config.yaml 完整字段说明。">
+                    Complete field reference for <code>config.yaml</code>.
+                </p>
+            </div>
+
+            <div class="max-w-5xl mx-auto space-y-10">
+
+                <!-- pprof -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-chart-line text-zinc-500 text-sm"></i> pprof</h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="Enables Go's built-in pprof HTTP server for runtime diagnostics." data-cn="启用 Go 内置 pprof HTTP 服务器，用于运行时诊断。">Enables Go's built-in pprof HTTP server for runtime diagnostics.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-40">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Type</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Default</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">pprof.enabled</td><td class="px-4 py-2 text-zinc-600 font-sans">bool</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Set true to start the pprof HTTP server." data-cn="设为 true 以启动 pprof HTTP 服务器。">Set true to start the pprof HTTP server.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">pprof.address</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-400 font-sans">localhost:6060</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Listening address for the pprof server." data-cn="pprof 服务器监听地址。">Listening address for the pprof server.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- gateways -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-server text-zinc-500 text-sm"></i> gateways[]</h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="Array of independent gateway instances. Each runs its own upstream listeners, routing logic, and downstream connections." data-cn="独立网关实例数组，每个实例有自己的上游监听器、路由逻辑和下游连接。">Array of independent gateway instances. Each runs its own upstream listeners, routing logic, and downstream connections.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-40">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Type</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">name</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Human-readable label for logs." data-cn="日志中使用的可读标签。">Human-readable label for logs.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">upstreams</td><td class="px-4 py-2 text-zinc-600 font-sans">array</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="List of master-side listeners (see Upstream fields below)." data-cn="主站侧监听器列表（见下方 Upstream 字段）。">List of master-side listeners.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">downstreams</td><td class="px-4 py-2 text-zinc-600 font-sans">array</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="List of slave-side targets with routing rules (see Downstream fields below)." data-cn="带路由规则的从站侧目标列表（见下方 Downstream 字段）。">List of slave-side targets with routing rules.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- upstreams -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-arrow-right-to-bracket text-zinc-500 text-sm"></i> upstreams[]</h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="Each entry defines one listener. Multiple upstreams can share the same set of downstreams." data-cn="每个条目定义一个监听器，多个上游共享同一组下游。">Each entry defines one listener. Multiple upstreams share the same downstream pool.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-40">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-36">Value / Type</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">type</td><td class="px-4 py-2 text-zinc-600 font-sans">tcp · rtu · rtu-over-tcp</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Protocol the master uses to connect." data-cn="主站连接使用的协议。">Protocol the master uses to connect.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">tcp.address</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Listen address for tcp / rtu-over-tcp types (e.g. 0.0.0.0:502)." data-cn="tcp / rtu-over-tcp 类型的监听地址（如 0.0.0.0:502）。">Listen address for tcp / rtu-over-tcp.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">serial.*</td><td class="px-4 py-2 text-zinc-600 font-sans">see Serial</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Serial port settings for rtu type (same fields as downstream serial)." data-cn="rtu 类型的串口参数（与下游 serial 字段相同）。">Serial port settings for rtu type.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- downstreams -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-arrow-right-from-bracket text-zinc-500 text-sm"></i> downstreams[]</h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="Each entry defines one slave target. The slave_ids field controls which Slave IDs are routed here. Leave empty to match all." data-cn="每个条目定义一个从站目标，slave_ids 控制哪些 Slave ID 被路由到此。留空则匹配全部。">Each entry defines one slave target. <code>slave_ids</code> controls routing — leave empty to match all.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-40">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-36">Value / Type</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">type</td><td class="px-4 py-2 text-zinc-600 font-sans">tcp · rtu · rtu-over-tcp · local</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Slave connection type. local uses the built-in virtual slave." data-cn="从站连接类型，local 使用内置虚拟从站。">Slave connection type. <code>local</code> = built-in virtual slave.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">slave_ids</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='Routing rule. Formats: "1" · "1,2,3" · "1-10". Empty = match all.' data-cn='路由规则。格式："1" · "1,2,3" · "1-10"。留空匹配全部。'>Routing rule. Formats: <code>"1"</code> · <code>"1,2,3"</code> · <code>"1-10"</code>. Empty = match all.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">tcp.address</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Remote address for tcp / rtu-over-tcp types (e.g. 192.168.1.100:502)." data-cn="tcp / rtu-over-tcp 类型的远端地址（如 192.168.1.100:502）。">Remote address for tcp / rtu-over-tcp.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">serial.*</td><td class="px-4 py-2 text-zinc-600 font-sans">see Serial</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Serial port settings for rtu type." data-cn="rtu 类型的串口参数。">Serial port settings for rtu type.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">local.persistence.type</td><td class="px-4 py-2 text-zinc-600 font-sans">memory · file · mmap</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Storage backend for the local virtual slave." data-cn="本地虚拟从站的存储后端。">Storage backend for the local virtual slave.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">local.persistence.path</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Directory path for file / mmap backends." data-cn="file / mmap 后端的目录路径。">Directory path for file / mmap backends.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- serial -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-plug text-zinc-500 text-sm"></i> serial fields <span class="text-zinc-400 font-normal text-sm">(used in rtu upstreams &amp; downstreams)</span></h3>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-44">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Default</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">device</td><td class="px-4 py-2 text-zinc-400 font-sans">—</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Serial device path (e.g. /dev/ttyUSB0)." data-cn="串口设备路径（如 /dev/ttyUSB0）。">Serial device path.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">baud_rate</td><td class="px-4 py-2 text-zinc-400 font-sans">—</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Baud rate (e.g. 9600, 19200, 115200)." data-cn="波特率（如 9600、19200、115200）。">Baud rate.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">data_bits</td><td class="px-4 py-2 text-zinc-400 font-sans">8</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Data bits (7 or 8)." data-cn="数据位（7 或 8）。">Data bits.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">parity</td><td class="px-4 py-2 text-zinc-400 font-sans">N</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='"N" (none) · "E" (even) · "O" (odd).' data-cn='"N"（无）· "E"（偶）· "O"（奇）。'>"N" · "E" · "O"</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">stop_bits</td><td class="px-4 py-2 text-zinc-400 font-sans">1</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Stop bits (1 or 2)." data-cn="停止位（1 或 2）。">Stop bits.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">timeout</td><td class="px-4 py-2 text-zinc-400 font-sans">500ms</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Read timeout per request (e.g. 500ms, 1s)." data-cn="每次请求的读取超时（如 500ms、1s）。">Read timeout per request.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">rqst_pause</td><td class="px-4 py-2 text-zinc-400 font-sans">100ms</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Minimum pause between consecutive requests on the bus." data-cn="总线上连续请求之间的最小间隔。">Minimum pause between consecutive requests.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">rs485</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Enable RS485 RTS signal control." data-cn="启用 RS485 RTS 信号控制。">Enable RS485 RTS signal control.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">delay_rts_before_send</td><td class="px-4 py-2 text-zinc-400 font-sans">0</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="RTS assertion delay before sending (e.g. 2ms)." data-cn="发送前 RTS 置位延迟（如 2ms）。">RTS assertion delay before sending.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">delay_rts_after_send</td><td class="px-4 py-2 text-zinc-400 font-sans">0</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="RTS de-assertion delay after sending." data-cn="发送后 RTS 取消延迟。">RTS de-assertion delay after sending.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">rts_high_during_send</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Keep RTS high during transmission." data-cn="发送期间保持 RTS 高电平。">Keep RTS high during transmission.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">rts_high_after_send</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Keep RTS high after transmission." data-cn="发送完成后保持 RTS 高电平。">Keep RTS high after transmission.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- log -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-file-lines text-zinc-500 text-sm"></i> log</h3>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-40">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Default</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">log.level</td><td class="px-4 py-2 text-zinc-400 font-sans">info</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='"debug" · "info" · "warn" · "error"' data-cn='"debug" · "info" · "warn" · "error"'>"debug" · "info" · "warn" · "error"</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">log.file</td><td class="px-4 py-2 text-zinc-400 font-sans">""</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Log file path. Empty string outputs to stdout." data-cn="日志文件路径，为空则输出到 stdout。">Log file path. Empty = stdout.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
     </main>
 
     <!-- Footer -->
@@ -402,7 +575,7 @@
             <div class="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div class="flex items-center gap-2">
                     <span class="font-risque text-xl">Modbus Gateway</span>
-                    <span class="text-zinc-400 text-sm">© 2025 ffutop</span>
+                    <span class="text-zinc-400 text-sm">© 2026 ffutop</span>
                 </div>
 
                 <div class="flex gap-6 text-sm font-medium text-zinc-600">
