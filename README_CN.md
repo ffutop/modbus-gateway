@@ -68,6 +68,28 @@ macOS/Linux 可通过 `uname -m` 查看架构：`x86_64` 对应 `amd64`，`arm64
 
 配置文件需要自行创建，下面提供可直接保存的完整示例。请使用所选发布版本对应的 README；旧版二进制可能不支持当前源码的配置 v1/注入功能。如果收到不支持版本或字段的错误，应升级到包含该功能的发布版本，或使用下文的 v0 示例。需要尚未发布的代码时，再按本文“源码构建”操作。
 
+### 另一种方式：Docker 镜像
+
+仓库同时向 Docker Hub 发布多架构镜像 `ffutop/modbus-gateway`，覆盖 `linux/amd64` 与 `linux/arm64` 两种平台，Docker 会自动拉取与宿主机匹配的架构。每个发布版本还会附带完整版本号标签（如 `0.5.0`）及 `major.minor`/`major` 标签，可在 [Docker Hub tags](https://hub.docker.com/r/ffutop/modbus-gateway/tags) 查看当前可用列表；生产环境建议固定具体版本号，而非使用 `latest`。
+
+```bash
+docker pull ffutop/modbus-gateway:latest
+```
+
+镜像默认执行 `-config /etc/modbusgw/config.yaml`。请挂载自己的配置文件（只读）与可写的数据目录用于持久化，并根据配置中的 `tcp.address` 发布对应端口：
+
+```bash
+mkdir -p data
+docker run -d \
+  --name modbus-gateway \
+  -p 1502:1502 \
+  -v "$(pwd)/config.yaml:/etc/modbusgw/config.yaml:ro" \
+  -v "$(pwd)/data:/data" \
+  ffutop/modbus-gateway:latest
+```
+
+若下游使用 RTU，容器还需访问宿主机的串口设备，例如增加 `--device /dev/ttyUSB0`，并确认容器内进程对该设备有读写权限。镜像未内置 TLS 或鉴权，请沿用与二进制部署相同的网络访问限制。
+
 ### 无硬件运行
 
 将以下内容保存为 `quickstart.yaml`。使用回环地址、非特权端口和内存模型，无需串口或真实设备：

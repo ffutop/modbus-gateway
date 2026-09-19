@@ -70,6 +70,28 @@ Extract the archive with your system's archive tool into a writable directory, t
 
 Create your own configuration file using the complete example below. Use the README for your selected release: older binaries may not support the current source's v1 configuration or injection features. If a version or field is unsupported, upgrade to a release containing that feature or use the v0 example below. Build from source using this README's instructions when you need unreleased code.
 
+### Alternative: Docker Image
+
+Multi-platform images are published to Docker Hub as `ffutop/modbus-gateway`, covering both `linux/amd64` and `linux/arm64`; Docker pulls the architecture matching your host automatically. Each release also publishes its full version tag (e.g. `0.5.0`) and `major.minor`/`major` tags; check [Docker Hub tags](https://hub.docker.com/r/ffutop/modbus-gateway/tags) for the current list and pin a specific version in production instead of `latest`.
+
+```bash
+docker pull ffutop/modbus-gateway:latest
+```
+
+The image's default command runs `-config /etc/modbusgw/config.yaml`. Mount your own configuration file (read-only) and a writable data directory for persistence, then publish the ports used by your `tcp.address` values:
+
+```bash
+mkdir -p data
+docker run -d \
+  --name modbus-gateway \
+  -p 1502:1502 \
+  -v "$(pwd)/config.yaml:/etc/modbusgw/config.yaml:ro" \
+  -v "$(pwd)/data:/data" \
+  ffutop/modbus-gateway:latest
+```
+
+For RTU downstreams, the container also needs access to the host's serial device, e.g. add `--device /dev/ttyUSB0` and confirm the in-container process can read/write it. The image has no built-in TLS or authentication; keep the same network restrictions you would apply to a binary deployment.
+
 ### Run Without Hardware
 
 Save this as `quickstart.yaml`. It uses a loopback address, an unprivileged port, and an in-memory model; no serial port or physical device is required:
