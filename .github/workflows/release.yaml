@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to build and publish (e.g. v0.5.0)'
+        required: true
+        type: string
 
 jobs:
   build-binaries:
@@ -24,6 +30,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -86,6 +94,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -105,9 +115,9 @@ jobs:
         with:
           images: ffutop/modbus-gateway
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ inputs.release_tag || github.ref_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag || github.ref_name }}
+            type=semver,pattern={{major}},value=${{ inputs.release_tag || github.ref_name }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
@@ -127,6 +137,55 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Prepare release notes
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          # Restore the remote tag object if checkout fetched a peeled commit ref.
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          python3 - <<'PYTHON'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          ref = f"refs/tags/{tag}"
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True)
+
+          notes = ""
+          if git("cat-file", "-t", ref).strip() == "tag":
+              notes = git("for-each-ref", "--format=%(contents)", ref).strip()
+          if not notes:
+              version = tag.removeprefix("v")
+              sections = []
+              for filename, language in [("CHANGELOG.md", "English"),
+                                         ("CHANGELOG_CN.md", "中文")]:
+                  result = subprocess.run(["git", "show", f"{ref}:{filename}"],
+                                          capture_output=True, text=True)
+                  if result.returncode != 0:
+                      continue
+                  pattern = (r"^## \[" + re.escape(version)
+                             + r"\][^\n]*\n(.*?)(?=^## |\Z)")
+                  match = re.search(pattern, result.stdout, re.MULTILINE | re.DOTALL)
+                  if match:
+                      body = re.split(r"^\[[^\]]+\]:", match[1],
+                                      maxsplit=1, flags=re.MULTILINE)[0].strip()
+                      if body:
+                          sections.append(f"## {language}\n\n{body}")
+              notes = "\n\n".join(sections)
+          if not notes:
+              raise SystemExit(f"No annotation or matching changelog section for {tag}")
+          Path("release-notes.md").write_text(notes + "\n", encoding="utf-8")
+          PYTHON
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -135,4 +194,7 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: ${{ inputs.release_tag || github.ref_name }}
+          body_path: release-notes.md
           files: artifacts/*/*

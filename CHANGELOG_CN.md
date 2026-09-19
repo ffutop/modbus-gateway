@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-19
+
+### Added
+
+- 共享仿真模型：通过 `version: 1` 在顶层 `simulations` 声明具名模型，使用 `simulation.ref` 在多个 `local`、`injector` 下游间共享数据与持久化，支持跨网关引用。
+- 注入下游（Injector）：将标准 Modbus 写请求（FC05/FC06/FC15/FC16）从线圈映射到离散输入，或从保持寄存器映射到输入寄存器，不修改源表。拒绝读取、未映射地址和跨映射边界的写入。
+- 配置校验：拒绝 v1 未知字段、无效模型引用、非法或重叠映射范围，以及重复的上游监听地址/设备路径字符串。每个 v1 `local`/`injector` 入口必须恰好解析为一个 1–247 的 Slave ID；目标映射重叠检查覆盖引用同一模型的全部注入入口。
+- 仿真写入审计与持久化健康状态：记录写入来源、目标范围、提交版本及状态。运行中持久化失败会将模型标记为降级，已成功写入的内存数据仍可访问，并返回正常 Modbus 响应。
+- 新增共享仿真、注入映射、配置校验、持久化及旧配置兼容性的单元测试与集成测试覆盖。
+
+### Changed
+
+- 配置版本化：继续接受未声明 `version` 或 `version: 0` 的旧配置，每个旧版 `local` 下游保持独立模型。v1 将持久化从下游 `local` 块移至顶层仿真配置；旧配置中出现 v1 专属字段时会被拒绝。
+- 仿真启动流程：启动网关前统一打开并恢复所有已配置模型的存储；任一模型存储打开失败，现在会导致整个进程退出。
+- 中英文 README：优先推荐 macOS、Linux、Windows 的 amd64/arm64 预构建 Releases，提供可独立使用的安装、配置、验证、迁移、运维、排障和开发说明。
+
+### Fixed
+
+- Docker 启动：将不支持的 `-c` 参数改为 `-config /etc/modbusgw/config.yaml`，分离可执行文件 `ENTRYPOINT` 与可覆盖的默认 `CMD` 参数。
+- 默认 mmap 配置：将目录路径 `/data/` 改为具体文件 `/data/modbus-slave.bin`，并注明需创建父目录及授予写权限。
+
 ## [0.4.0] - 2026-05-13
 
 ### Added
@@ -50,3 +71,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [0.2.0]: https://github.com/ffutop/modbus-gateway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ffutop/modbus-gateway/releases/tag/v0.1.0
+
+[0.5.0]: https://github.com/ffutop/modbus-gateway/compare/v0.4.0...v0.5.0
