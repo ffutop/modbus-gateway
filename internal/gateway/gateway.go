@@ -8,11 +8,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/ffutop/modbus-gateway/internal/routing"
 	"github.com/ffutop/modbus-gateway/modbus"
 	"github.com/ffutop/modbus-gateway/transport"
 )
@@ -37,50 +36,11 @@ func NewGateway(name string, upstreams []transport.Upstream, routes map[byte]tra
 }
 
 // ParseSlaveIDs parses a string of slave IDs (e.g. "1,2,5-10") into a slice of bytes.
+//
+// Deprecated: use internal/routing.ParseSlaveIDs directly. Kept as a thin
+// delegate for existing call sites.
 func ParseSlaveIDs(input string) ([]byte, error) {
-	var ids []byte
-	parts := strings.Split(input, ",")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if strings.Contains(part, "-") {
-			// Range
-			ranges := strings.Split(part, "-")
-			if len(ranges) != 2 {
-				return nil, fmt.Errorf("invalid range: %s", part)
-			}
-			start, err := strconv.Atoi(strings.TrimSpace(ranges[0]))
-			if err != nil {
-				return nil, fmt.Errorf("invalid start of range: %w", err)
-			}
-			end, err := strconv.Atoi(strings.TrimSpace(ranges[1]))
-			if err != nil {
-				return nil, fmt.Errorf("invalid end of range: %w", err)
-			}
-			if start > end {
-				return nil, fmt.Errorf("start of range %d is greater than end %d", start, end)
-			}
-			for i := start; i <= end; i++ {
-				if i < 0 || i > 255 {
-					return nil, fmt.Errorf("id out of range: %d", i)
-				}
-				ids = append(ids, byte(i))
-			}
-		} else {
-			// Single
-			id, err := strconv.Atoi(part)
-			if err != nil {
-				return nil, fmt.Errorf("invalid id: %w", err)
-			}
-			if id < 0 || id > 255 {
-				return nil, fmt.Errorf("id out of range: %d", id)
-			}
-			ids = append(ids, byte(id))
-		}
-	}
-	return ids, nil
+	return routing.ParseSlaveIDs(input)
 }
 
 // Start starts all upstream servers and the downstream connection

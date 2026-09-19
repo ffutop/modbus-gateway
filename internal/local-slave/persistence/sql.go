@@ -7,7 +7,6 @@ package persistence
 import (
 	"database/sql"
 	"fmt"
-	"log/slog"
 
 	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
 )
@@ -103,9 +102,9 @@ func (s *SQLStorage) Save(m *model.DataModel) error {
 }
 
 // OnWrite upserts the changed register to the DB.
-func (s *SQLStorage) OnWrite(table model.TableType, address, quantity uint16) {
+func (s *SQLStorage) OnWrite(table model.TableType, address, quantity uint16) error {
 	if s.db == nil || s.model == nil {
-		return
+		return fmt.Errorf("sql storage not initialized")
 	}
 
 	// We need to read the new values from the model to write them.
@@ -138,11 +137,11 @@ func (s *SQLStorage) OnWrite(table model.TableType, address, quantity uint16) {
 		// Upsert logic (SQLite compatible)
 		// "INSERT OR REPLACE" or "ON CONFLICT"
 		query := "INSERT INTO modbus_registers (table_type, address, value) VALUES (?, ?, ?) ON CONFLICT(table_type, address) DO UPDATE SET value=excluded.value"
-		_, err := s.db.Exec(query, int(table), addr, val)
-		if err != nil {
-			slog.Error("Failed to persist register", "table", table, "addr", addr, "err", err)
+		if _, err := s.db.Exec(query, int(table), addr, val); err != nil {
+			return fmt.Errorf("failed to persist register table=%v addr=%d: %w", table, addr, err)
 		}
 	}
+	return nil
 }
 
 func (s *SQLStorage) Close() error {

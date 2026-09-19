@@ -18,7 +18,10 @@ import (
 
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
+	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
+	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/transport/injector"
 	"github.com/ffutop/modbus-gateway/transport/local"
 	"github.com/ffutop/modbus-gateway/transport/rtu"
 	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
@@ -53,6 +56,25 @@ func main() {
 
 	slog.Info("Starting Modbus Gateway...")
 
+	// Open every shared simulation model up front. A simulation's
+	// persistence must successfully open/restore before any downstream
+	// referencing it is allowed to start; since a simulation may be shared
+	// by downstreams across multiple gateways, any failure here aborts the
+	// whole process rather than selectively starting a subset of gateways.
+	simulations := make(map[string]*simulation.Simulation, len(cfg.Simulations))
+	for _, simCfg := range cfg.Simulations {
+		storage := persistence.New(persistence.Config{
+			Type: simCfg.Persistence.Type,
+			Path: simCfg.Persistence.Path,
+		})
+		sim, err := simulation.Open(simCfg.Name, storage)
+		if err != nil {
+			slog.Error("Failed to open simulation persistence", "simulation", simCfg.Name, "err", err)
+			os.Exit(1)
+		}
+		simulations[simCfg.Name] = sim
+	}
+
 	// Create Gateways
 	var gateways []*gateway.Gateway
 
@@ -66,7 +88,7 @@ func main() {
 
 		// Compatibility Check: If only one downstream and no SlaveIDs, treat as default route
 		if len(gwCfg.Downstreams) == 1 && gwCfg.Downstreams[0].SlaveIDs == "" {
-			ds, err := createDownstream(gwCfg.Downstreams[0])
+			ds, err := createDownstream(gwCfg.Downstreams[0], simulations)
 			if err != nil {
 				slog.Error("Failed to create default downstream", "gateway", gwCfg.Name, "err", err)
 				continue
@@ -76,7 +98,7 @@ func main() {
 		} else {
 			// Routing Mode
 			for _, dsCfg := range gwCfg.Downstreams {
-				ds, err := createDownstream(dsCfg)
+				ds, err := createDownstream(dsCfg, simulations)
 				if err != nil {
 					slog.Error("Failed to create downstream", "gateway", gwCfg.Name, "err", err)
 					continue
@@ -157,10 +179,17 @@ func main() {
 
 	cancel()
 	wg.Wait()
+
+	for name, sim := range simulations {
+		if err := sim.Close(); err != nil {
+			slog.Error("Failed to close simulation", "simulation", name, "err", err)
+		}
+	}
+
 	slog.Info("Goodbye.")
 }
 
-func createDownstream(cfg config.DownstreamConfig) (transport.Downstream, error) {
+func createDownstream(cfg config.DownstreamConfig, simulations map[string]*simulation.Simulation) (transport.Downstream, error) {
 	switch cfg.Type {
 	case "tcp":
 		return tcp.NewClient(cfg.Tcp.Address), nil
@@ -169,7 +198,17 @@ func createDownstream(cfg config.DownstreamConfig) (transport.Downstream, error)
 	case "rtu-over-tcp":
 		return rtuovertcp.NewClient(cfg.Tcp.Address), nil
 	case "local":
-		return local.NewClient(cfg.Local), nil
+		sim, ok := simulations[cfg.SimulationRef]
+		if !ok {
+			return nil, fmt.Errorf("simulation %q not found", cfg.SimulationRef)
+		}
+		return local.NewClient(sim), nil
+	case "injector":
+		sim, ok := simulations[cfg.SimulationRef]
+		if !ok {
+			return nil, fmt.Errorf("simulation %q not found", cfg.SimulationRef)
+		}
+		return injector.NewClient(sim, cfg.Mappings), nil
 	default:
 		return nil, fmt.Errorf("unknown downstream type: %s", cfg.Type)
 	}

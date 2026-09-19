@@ -73,6 +73,7 @@ func (s *Server) Close() error {
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	slog.Info("New TCP client connected", "addr", conn.RemoteAddr())
+	ctx = transport.WithSourceAddr(ctx, conn.RemoteAddr().String())
 
 	for {
 		// Check context

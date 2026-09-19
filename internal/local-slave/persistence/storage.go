@@ -19,5 +19,7 @@ type Storage interface {
 
 	// OnWrite is a hook called whenever a register is modified.
 	// It allows the storage to perform real-time persistence (e.g. sync to disk or DB).
-	OnWrite(table model.TableType, address, quantity uint16)
+	// It returns an error if the persistence operation failed; callers must not fail
+	// the in-memory write because of it, but should surface the failure (e.g. mark degraded).
+	OnWrite(table model.TableType, address, quantity uint16) error
 }

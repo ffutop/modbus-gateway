@@ -7,7 +7,6 @@ package persistence
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 
 	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
@@ -75,17 +74,15 @@ func (ms *FileStorage) Save(m *model.DataModel) error {
 }
 
 // OnWrite triggers a sync for persistence.
-func (ms *FileStorage) OnWrite(table model.TableType, address, quantity uint16) {
+func (ms *FileStorage) OnWrite(table model.TableType, address, quantity uint16) error {
 	// For "Real-time" persistence, we sync the file.
 	// Given the requirement "ensure data can be recovered", we should sync.
-	if err := ms.sync(); err != nil {
-		slog.Error("Failed to sync file", "err", err)
-	}
+	return ms.sync()
 }
 
 func (ms *FileStorage) sync() error {
 	if ms.data == nil || ms.file == nil {
-		return nil
+		return fmt.Errorf("file storage is not loaded")
 	}
 	if _, err := ms.file.WriteAt(ms.data, 0); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)

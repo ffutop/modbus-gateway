@@ -6,65 +6,29 @@ package local
 
 import (
 	"context"
-	"log/slog"
 
-	"github.com/ffutop/modbus-gateway/internal/config"
 	localslave "github.com/ffutop/modbus-gateway/internal/local-slave"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
+	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/modbus"
 )
 
-// Client implements Downstream interface for a local in-memory slave.
+// Client implements Downstream for a business local slave backed by a
+// shared simulation model.
 type Client struct {
-	slave   *localslave.LocalSlave
-	storage persistence.Storage
+	slave *localslave.LocalSlave
 }
 
-// NewClient creates a new Local Client.
-func NewClient(cfg config.LocalConfig) *Client {
-	var storage persistence.Storage
-	switch cfg.Persistence.Type {
-	case "file":
-		slog.Info("Initializing local slave with file persistence", "path", cfg.Persistence.Path)
-		storage = persistence.NewFileStorage(cfg.Persistence.Path)
-	case "mmap":
-		slog.Info("Initializing local slave with MMAP persistence", "path", cfg.Persistence.Path)
-		storage = persistence.NewMmapStorage(cfg.Persistence.Path)
-	case "sql":
-		slog.Info("Initializing local slave with SQL persistence", "driver", "sqlite3", "dsn", cfg.Persistence.Path)
-		// Assuming Path contains DSN for now, or we need a new config field.
-		// Re-using Path as DSN is simple.
-		// Note: The main app must import the driver (e.g. _ "github.com/mattn/go-sqlite3")
-		storage = persistence.NewSQLStorage("sqlite3", cfg.Persistence.Path)
-	default:
-		slog.Info("Initializing local slave with memory storage (non-persistent)")
-		storage = persistence.NewMemoryStorage()
-	}
-
-	m, err := storage.Load()
-	if err != nil {
-		slog.Error("Failed to load persistence data, starting with fresh model", "err", err)
-		// If mmap fails, we probably shouldn't continue or we fall back to memory
-		if m == nil {
-			slog.Warn("Falling back to MemoryStorage")
-			storage = persistence.NewMemoryStorage()
-			m, _ = storage.Load()
-		}
-	}
-
-	// Initialize protocol logic
-	s := localslave.NewLocalSlave(m, storage)
-
-	return &Client{
-		slave:   s,
-		storage: storage,
-	}
+// NewClient creates a new Local Client bound to sim. sim's lifecycle
+// (persistence open/close) is owned centrally by whoever built the shared
+// simulation registry, not by this Client - the same Simulation may be
+// referenced by other Clients (local or injector) too.
+func NewClient(sim *simulation.Simulation) *Client {
+	return &Client{slave: localslave.NewLocalSlave(sim)}
 }
 
-// Send processes the PDU locally.
+// Send processes the PDU against the shared simulation model.
 func (c *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
-	// The LocalSlave is synchronous and fast, so we just call Process.
-	return c.slave.Process(pdu)
+	return c.slave.Process(ctx, pdu)
 }
 
 // Connect is a no-op for local slave.
@@ -72,10 +36,8 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Close closes the storage.
+// Close is a no-op: the underlying Simulation's persistence is closed
+// centrally, since it may be shared by other downstreams.
 func (c *Client) Close() error {
-	if closer, ok := c.storage.(interface{ Close() }); ok {
-		closer.Close()
-	}
 	return nil
 }

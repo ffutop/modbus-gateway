@@ -6,7 +6,6 @@ package persistence
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/edsrzf/mmap-go"
@@ -79,14 +78,15 @@ func (ms *MmapStorage) Save(m *model.DataModel) error {
 }
 
 // OnWrite triggers a flush for persistence.
-func (ms *MmapStorage) OnWrite(table model.TableType, address, quantity uint16) {
+func (ms *MmapStorage) OnWrite(table model.TableType, address, quantity uint16) error {
 	if ms.data == nil {
-		return
+		return fmt.Errorf("mmap data is nil")
 	}
 	// For "Real-time" persistence, flush mmap data to disk
 	if err := ms.data.Flush(); err != nil {
-		slog.Error("Failed to flush mmap", "err", err)
+		return fmt.Errorf("failed to flush mmap: %w", err)
 	}
+	return nil
 }
 
 // Close unmaps and closes the file.

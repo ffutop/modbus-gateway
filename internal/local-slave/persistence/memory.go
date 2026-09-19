@@ -21,6 +21,7 @@ func (ms *MemoryStorage) Save(model *model.DataModel) error {
 	return nil
 }
 
-func (ms *MemoryStorage) OnWrite(table model.TableType, address, quantity uint16) {
+func (ms *MemoryStorage) OnWrite(table model.TableType, address, quantity uint16) error {
 	// No-op
+	return nil
 }

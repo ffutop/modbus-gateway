@@ -30,3 +30,22 @@ type Downstream interface {
 	Connect(ctx context.Context) error
 	Close() error
 }
+
+type sourceAddrKey struct{}
+
+// WithSourceAddr attaches the originating connection's address to ctx, so
+// downstream handlers (e.g. audit logging for simulation writes) can record
+// where a request came from. Upstreams without a per-request connection
+// (e.g. RTU serial) may leave it unset.
+func WithSourceAddr(ctx context.Context, addr string) context.Context {
+	return context.WithValue(ctx, sourceAddrKey{}, addr)
+}
+
+// SourceAddr returns the originating connection's address previously
+// attached with WithSourceAddr, or "" if none was set.
+func SourceAddr(ctx context.Context) string {
+	if addr, ok := ctx.Value(sourceAddrKey{}).(string); ok {
+		return addr
+	}
+	return ""
+}

@@ -71,6 +71,7 @@ func (s *Server) Close() error {
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn, handler transport.RequestHandler) {
 	defer conn.Close()
 	slog.Info("New RTU over TCP client connected", "addr", conn.RemoteAddr())
+	ctx = transport.WithSourceAddr(ctx, conn.RemoteAddr().String())
 
 	// Buffer for reading (reusing max size from RTU package)
 	buf := make([]byte, rtupacket.MaxSize)

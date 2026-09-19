@@ -138,6 +138,46 @@ func (m *DataModel) ReadDiscreteInputs(address, quantity uint16) ([]byte, error)
 	return result, nil
 }
 
+// WriteSingleDiscreteInput writes a single discrete input. value should be non-zero (ON) or zero (OFF).
+func (m *DataModel) WriteSingleDiscreteInput(address uint16, value uint16) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if int(address) > MaxAddress {
+		return fmt.Errorf("address out of range")
+	}
+
+	if value != 0 {
+		m.DiscreteInputs[address] = 1
+	} else {
+		m.DiscreteInputs[address] = 0
+	}
+	return nil
+}
+
+// WriteMultipleDiscreteInputs writes a range of discrete inputs from packed bytes.
+func (m *DataModel) WriteMultipleDiscreteInputs(address, quantity uint16, data []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := validateRange(address, quantity); err != nil {
+		return err
+	}
+
+	expectedBytes := (int(quantity) + 7) / 8
+	if len(data) < expectedBytes {
+		return fmt.Errorf("insufficient data length")
+	}
+
+	for i := 0; i < int(quantity); i++ {
+		byteIdx := i / 8
+		bitIdx := uint(i % 8)
+		val := (data[byteIdx] >> bitIdx) & 1
+		m.DiscreteInputs[int(address)+i] = val
+	}
+	return nil
+}
+
 // ReadHoldingRegisters reads a range of holding registers and returns them as BigEndian bytes.
 func (m *DataModel) ReadHoldingRegisters(address, quantity uint16) ([]byte, error) {
 	m.mu.RLock()
@@ -203,6 +243,39 @@ func (m *DataModel) ReadInputRegisters(address, quantity uint16) ([]byte, error)
 		binary.BigEndian.PutUint16(result[i*2:], val)
 	}
 	return result, nil
+}
+
+// WriteSingleInputRegister writes a single input register.
+func (m *DataModel) WriteSingleInputRegister(address uint16, value uint16) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if int(address) > MaxAddress {
+		return fmt.Errorf("address out of range")
+	}
+
+	m.InputRegisters[address] = value
+	return nil
+}
+
+// WriteMultipleInputRegisters writes a range of input registers from BigEndian bytes.
+func (m *DataModel) WriteMultipleInputRegisters(address, quantity uint16, data []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := validateRange(address, quantity); err != nil {
+		return err
+	}
+
+	if len(data) < int(quantity)*2 {
+		return fmt.Errorf("insufficient data length")
+	}
+
+	for i := 0; i < int(quantity); i++ {
+		val := binary.BigEndian.Uint16(data[i*2:])
+		m.InputRegisters[int(address)+i] = val
+	}
+	return nil
 }
 
 func validateRange(address, quantity uint16) error {
