@@ -52,8 +52,8 @@
         "price": "0",
         "priceCurrency": "USD"
       },
-      "description": "A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go.",
-      "softwareVersion": "1.0.0",
+      "description": "A high-performance, configurable Modbus TCP to Modbus RTU gateway written in Go, with shared simulation models and data injection.",
+      "softwareVersion": "0.5.0",
       "author": {
         "@type": "Person",
         "name": "ffutop",
@@ -177,7 +177,7 @@
             <div class="container max-w-screen-xl mx-auto px-4 md:px-8 flex flex-col items-center gap-4 text-center">
 
                 <div class="rounded-2xl bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-800 mb-2">
-                    <span data-en="v0.4.0 Released" data-cn="v0.4.0 已发布">v0.4.0 Released</span>
+                    <span data-en="v0.5.0 Released" data-cn="v0.5.0 已发布">v0.5.0 Released</span>
                 </div>
 
                 <h1 class="font-bold text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tighter text-zinc-950 max-w-4xl">
@@ -186,9 +186,9 @@
                 </h1>
 
                 <p class="max-w-[42rem] leading-normal text-zinc-500 sm:text-xl sm:leading-8 font-light">
-                    <span data-en="A high-performance Modbus gateway written in Go. Supports arbitrary TCP / RTU / RTU-over-TCP protocol bridging, Slave ID-based routing across multiple downstreams, and a built-in local virtual slave."
-                          data-cn="使用 Go 语言编写的高性能 Modbus 网关。支持 TCP / RTU / RTU-over-TCP 任意协议桥接、基于 Slave ID 的多下游路由，以及内置本地虚拟从站。">
-                        A high-performance Modbus gateway written in Go. Supports arbitrary TCP / RTU / RTU-over-TCP protocol bridging, Slave ID-based routing across multiple downstreams, and a built-in local virtual slave.
+                    <span data-en="A high-performance Modbus gateway written in Go. Supports arbitrary TCP / RTU / RTU-over-TCP protocol bridging, Slave ID-based routing across multiple downstreams, a built-in local virtual slave, and shared simulation models with data injection."
+                          data-cn="使用 Go 语言编写的高性能 Modbus 网关。支持 TCP / RTU / RTU-over-TCP 任意协议桥接、基于 Slave ID 的多下游路由、内置本地虚拟从站，以及可共享的仿真数据模型与数据注入。">
+                        A high-performance Modbus gateway written in Go. Supports arbitrary TCP / RTU / RTU-over-TCP protocol bridging, Slave ID-based routing across multiple downstreams, a built-in local virtual slave, and shared simulation models with data injection.
                     </span>
                 </p>
 
@@ -207,8 +207,8 @@
         <section id="architecture" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24 border-t border-zinc-100">
             <div class="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-12">
                 <h2 class="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-4xl tracking-tight" data-en="Architecture" data-cn="架构设计">Architecture</h2>
-                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Slave ID routing dispatches each request to the correct downstream. Serialized queuing prevents bus conflicts." data-cn="基于 Slave ID 的路由将请求分发到对应下游，串行队列防止总线冲突。">
-                    Slave ID routing dispatches each request to the correct downstream. Serialized queuing prevents bus conflicts.
+                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Slave ID routing dispatches each request to the correct downstream. A mutex serializes requests per downstream connection, and local/injector downstreams can reference the same shared simulation model." data-cn="基于 Slave ID 的路由将请求分发到对应下游；每个下游连接通过互斥锁串行化请求，local / injector 下游还可以引用同一个共享仿真模型。">
+                    Slave ID routing dispatches each request to the correct downstream. A mutex serializes requests per downstream connection, and local/injector downstreams can reference the same shared simulation model.
                 </p>
             </div>
 
@@ -238,10 +238,10 @@
                     <i class="fa-solid fa-server text-3xl mb-3 text-white"></i>
                     <h3 class="font-bold text-base font-risque tracking-wide">Gateway</h3>
                     <div class="mt-3 flex flex-col gap-1 opacity-80">
-                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Queue Buffer</span>
-                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Serializer</span>
                         <span class="text-xs bg-zinc-800 rounded px-2 py-1">SlaveID Router</span>
-                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Local Slave</span>
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Mutex Serializer</span>
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Shared Simulations</span>
+                        <span class="text-xs bg-zinc-800 rounded px-2 py-1">Local Slave / Injector</span>
                     </div>
                 </div>
 
@@ -257,7 +257,8 @@
                         <div class="text-center text-zinc-400 text-xs font-sans font-semibold uppercase tracking-wider mb-1">Downstreams</div>
                         <div class="diagram-box p-2.5 text-center shadow-sm text-xs">RTU Slave<br><span class="text-zinc-400 font-sans">slave_ids: 1-10</span></div>
                         <div class="diagram-box p-2.5 text-center shadow-sm text-xs">TCP Slave<br><span class="text-zinc-400 font-sans">slave_ids: 11-20</span></div>
-                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">Local Slave<br><span class="text-zinc-400 font-sans">slave_ids: 100</span></div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">Local Slave<br><span class="text-zinc-400 font-sans">slave_ids: 100 (simulation.ref)</span></div>
+                        <div class="diagram-box p-2.5 text-center shadow-sm text-xs">Injector<br><span class="text-zinc-400 font-sans">slave_ids: 247 (simulation.ref)</span></div>
                     </div>
                 </div>
 
@@ -294,7 +295,7 @@
                         <i class="fa-solid fa-database text-2xl text-zinc-900"></i>
                         <div class="space-y-2">
                             <h3 class="font-bold" data-en="Local Slave" data-cn="本地虚拟从站">Local Slave</h3>
-                            <p class="text-sm text-zinc-500" data-en="Built-in virtual Modbus slave with pluggable persistence: memory, file, or high-performance mmap." data-cn="内置虚拟 Modbus 从站，支持可插拔持久化：内存、文件或高性能 mmap。">Built-in virtual slave with memory, file, or mmap persistence.</p>
+                            <p class="text-sm text-zinc-500" data-en="Built-in virtual Modbus slave (FC01-06, FC15, FC16) with pluggable persistence: memory, file, or mmap. In config v1, share one model across downstreams and gateways via simulation.ref." data-cn="内置虚拟 Modbus 从站（支持 FC01-06、FC15、FC16），可插拔持久化：内存、文件或 mmap。在 v1 配置中可通过 simulation.ref 在多个下游甚至多个网关间共享同一模型。">Built-in virtual slave with memory, file, or mmap persistence; shareable via simulation.ref in v1.</p>
                         </div>
                     </div>
                 </div>
@@ -304,7 +305,7 @@
                         <i class="fa-solid fa-layer-group text-2xl text-zinc-900"></i>
                         <div class="space-y-2">
                             <h3 class="font-bold" data-en="Multi-Master Concurrency" data-cn="多主并发">Multi-Master Concurrency</h3>
-                            <p class="text-sm text-zinc-500" data-en="Multiple masters connect simultaneously. Per-downstream serialization queues prevent RS485 bus conflicts." data-cn="多主站同时连接，每个下游独立的串行化队列防止 RS485 总线冲突。">Multiple masters with per-downstream serialization queues.</p>
+                            <p class="text-sm text-zinc-500" data-en="Multiple masters connect simultaneously. A mutex serializes requests through each downstream connection object, preventing RS485 bus conflicts." data-cn="多主站同时连接；每个下游连接对象通过互斥锁串行化请求，防止 RS485 总线冲突。">Multiple masters; a mutex serializes requests per downstream connection.</p>
                         </div>
                     </div>
                 </div>
@@ -325,6 +326,26 @@
                         <div class="space-y-2">
                             <h3 class="font-bold" data-en="pprof Profiling" data-cn="pprof 性能分析">pprof Profiling</h3>
                             <p class="text-sm text-zinc-500" data-en="Optional Go pprof HTTP endpoint for CPU, heap, and goroutine diagnostics via go tool pprof." data-cn="可选的 Go pprof HTTP 端点，通过 go tool pprof 进行 CPU、堆内存、Goroutine 诊断。">Optional pprof endpoint for CPU / heap / goroutine diagnostics.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-solid fa-diagram-project text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Shared Simulations & Injection" data-cn="共享仿真与数据注入">Shared Simulations & Injection</h3>
+                            <p class="text-sm text-zinc-500" data-en="Config v1: declare named models under simulations[] and reference them from multiple local/injector downstreams via simulation.ref. injector downstreams map writes (FC05/06/15/16) from coils/holding registers into discrete inputs/input registers without touching the source table." data-cn="v1 配置：在 simulations[] 下声明具名模型，多个 local / injector 下游可通过 simulation.ref 引用同一模型。injector 下游将写请求（FC05/06/15/16）从 coils / holding registers 映射到 discrete inputs / input registers，且不修改源表。">Config v1 lets local/injector downstreams share one named model, with injector mapping writes into read-only tables.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative overflow-hidden rounded-lg border border-zinc-200 bg-white p-2">
+                    <div class="flex h-[180px] flex-col justify-between rounded-md p-6">
+                        <i class="fa-brands fa-docker text-2xl text-zinc-900"></i>
+                        <div class="space-y-2">
+                            <h3 class="font-bold" data-en="Docker Ready" data-cn="Docker 支持">Docker Ready</h3>
+                            <p class="text-sm text-zinc-500" data-en="Multi-platform images (linux/amd64, linux/arm64) published to Docker Hub as ffutop/modbus-gateway, tagged per release." data-cn="多平台镜像（linux/amd64、linux/arm64）以 ffutop/modbus-gateway 名义发布到 Docker Hub，并按发行版本打标签。">Multi-platform images published to Docker Hub as ffutop/modbus-gateway.</p>
                         </div>
                     </div>
                 </div>
@@ -362,6 +383,17 @@
                                 <code class="break-all">./modbus-gateway -config config.yaml</code>
                             </div>
                         </div>
+
+                        <div>
+                            <p class="text-sm font-medium text-zinc-500 mb-2" data-en="3. Or use Docker" data-cn="3. 或使用 Docker">3. Or use Docker</p>
+                            <div class="bg-zinc-950 text-zinc-50 rounded-lg p-4 font-mono text-sm shadow-lg border border-zinc-800">
+                                <div class="text-zinc-400 text-xs mb-2 italic"># Multi-platform image: linux/amd64, linux/arm64</div>
+                                <code class="block">docker run -d --name modbus-gateway \</code>
+                                <code class="block">&nbsp;&nbsp;-v "$(pwd)/config.yaml:/etc/modbusgw/config.yaml:ro" \</code>
+                                <code class="block">&nbsp;&nbsp;-v "$(pwd)/data:/data" \</code>
+                                <code class="block">&nbsp;&nbsp;ffutop/modbus-gateway:latest</code>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -375,33 +407,38 @@
                     <p class="text-sm text-zinc-500 mb-4" data-en="All behavior is driven by config.yaml. See the Configuration Reference below for full field docs." data-cn="所有行为由 config.yaml 驱动，完整字段说明请参阅下方配置参考。">All behavior is driven by <code>config.yaml</code>. See the <a href="#config-reference" class="underline">Configuration Reference</a> below.</p>
 
                     <div class="bg-white text-zinc-800 rounded-lg p-4 font-mono text-sm shadow-sm border border-zinc-200 h-[340px] overflow-y-auto">
-<pre><code><span class="text-zinc-400"># pprof profiling server (optional)</span>
-<span class="text-purple-600">pprof:</span>
-  <span class="text-purple-600">enabled:</span> false
-  <span class="text-purple-600">address:</span> "localhost:6060"
+<pre><code><span class="text-zinc-400"># config schema v1: named, shareable simulation models</span>
+<span class="text-purple-600">version:</span> 1
+
+<span class="text-purple-600">simulations:</span>
+  - <span class="text-purple-600">name:</span> sim-device
+    <span class="text-purple-600">persistence:</span>
+      <span class="text-purple-600">type:</span> mmap
+      <span class="text-purple-600">path:</span> "/data/sim-device.bin"
 
 <span class="text-purple-600">gateways:</span>
-  - <span class="text-purple-600">name:</span> "gateway-1"
+  - <span class="text-purple-600">name:</span> "business-modbus"
     <span class="text-purple-600">upstreams:</span>
       - <span class="text-purple-600">type:</span> "tcp"
-        <span class="text-purple-600">tcp:</span>
-          <span class="text-purple-600">address:</span> "0.0.0.0:502"
+        <span class="text-purple-600">tcp:</span> { <span class="text-purple-600">address:</span> "0.0.0.0:502" }
     <span class="text-purple-600">downstreams:</span>
-      - <span class="text-purple-600">type:</span> "rtu"
-        <span class="text-purple-600">slave_ids:</span> "1-10"
-        <span class="text-purple-600">serial:</span>
-          <span class="text-purple-600">device:</span> "/dev/ttyUSB0"
-          <span class="text-purple-600">baud_rate:</span> 19200
-          <span class="text-purple-600">data_bits:</span> 8
-          <span class="text-purple-600">parity:</span> "N"
-          <span class="text-purple-600">stop_bits:</span> 1
-          <span class="text-purple-600">timeout:</span> "500ms"
       - <span class="text-purple-600">type:</span> "local"
         <span class="text-purple-600">slave_ids:</span> "100"
-        <span class="text-purple-600">local:</span>
-          <span class="text-purple-600">persistence:</span>
-            <span class="text-purple-600">type:</span> "mmap"
-            <span class="text-purple-600">path:</span> "/data/"
+        <span class="text-purple-600">simulation:</span> { <span class="text-purple-600">ref:</span> sim-device }
+
+  <span class="text-zinc-400"># a second gateway injecting writes into the SAME model</span>
+  - <span class="text-purple-600">name:</span> "simulation-injection"
+    <span class="text-purple-600">upstreams:</span>
+      - <span class="text-purple-600">type:</span> "tcp"
+        <span class="text-purple-600">tcp:</span> { <span class="text-purple-600">address:</span> "0.0.0.0:503" }
+    <span class="text-purple-600">downstreams:</span>
+      - <span class="text-purple-600">type:</span> "injector"
+        <span class="text-purple-600">slave_ids:</span> "247"
+        <span class="text-purple-600">simulation:</span>
+          <span class="text-purple-600">ref:</span> sim-device
+          <span class="text-purple-600">mappings:</span>
+            - <span class="text-purple-600">source:</span> { table: coils, start_address: 0, count: 256 }
+              <span class="text-purple-600">target:</span> { table: discrete_inputs, start_address: 0 }
 
 <span class="text-purple-600">log:</span>
   <span class="text-purple-600">level:</span> "info"
@@ -416,12 +453,35 @@
         <section id="config-reference" class="container max-w-screen-xl mx-auto px-4 md:px-8 py-12 md:py-24">
             <div class="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-12">
                 <h2 class="font-bold text-3xl leading-[1.1] sm:text-3xl md:text-4xl tracking-tight" data-en="Configuration Reference" data-cn="配置参考">Configuration Reference</h2>
-                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Complete field reference for config.yaml." data-cn="config.yaml 完整字段说明。">
-                    Complete field reference for <code>config.yaml</code>.
+                <p class="max-w-[85%] leading-normal text-zinc-500 sm:text-lg sm:leading-7" data-en="Complete field reference for config.yaml, covering both the legacy (v0) and shared-simulation (v1) schemas." data-cn="config.yaml 完整字段说明，涵盖旧版（v0）与共享仿真（v1）两种配置模式。">
+                    Complete field reference for <code>config.yaml</code>, covering both the legacy (v0) and shared-simulation (v1) schemas.
                 </p>
             </div>
 
             <div class="max-w-5xl mx-auto space-y-10">
+
+                <!-- version / simulations -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-code-compare text-zinc-500 text-sm"></i> version &amp; simulations[]</h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="An omitted version or version: 0 keeps the legacy schema, where each local downstream owns an independent model under its own local.persistence block; it must not contain simulations, simulation, or injector. version: 1 strictly rejects unknown fields, moves persistence to top-level simulations[], and lets local/injector downstreams reference a model by name." data-cn="省略 version 或 version: 0 保留旧版结构，每个 local 下游在自己的 local.persistence 块中拥有独立模型；不能包含 simulations、simulation 或 injector。version: 1 会严格拒绝未知字段，将持久化配置移至顶层 simulations[]，并让 local / injector 下游通过名称引用模型。">An omitted <code>version</code> or <code>version: 0</code> keeps the legacy per-downstream model. <code>version: 1</code> enables shared <code>simulations[]</code> referenced via <code>simulation.ref</code>, and strictly rejects unknown fields.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-48">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Type</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">version</td><td class="px-4 py-2 text-zinc-600 font-sans">int</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Config schema version (0 or 1) — not the software release version. Omitted = 0." data-cn="配置模式版本（0 或 1）——并非软件发布版本号。省略时为 0。">Config schema version (0 or 1); omitted = 0. Not the software release version.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">simulations[].name</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Nonempty, unique model name referenced by downstreams via simulation.ref." data-cn="非空且唯一的模型名称，供下游通过 simulation.ref 引用。">Nonempty, unique model name, referenced via <code>simulation.ref</code>.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">simulations[].persistence.type</td><td class="px-4 py-2 text-zinc-600 font-sans">memory · file · mmap</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Storage backend. Empty/unknown falls back to memory. sql is accepted by config but has no driver registered in the current build, so it is not directly usable." data-cn="存储后端。为空或未知类型时回退为 memory。sql 虽被配置接受，但当前版本未注册驱动，暂不可直接使用。">Storage backend; empty/unknown falls back to memory. <code>sql</code> is not directly usable yet (no driver registered).</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">simulations[].persistence.path</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="File path for file/mmap types; must name a file, not a directory. Parent directory must exist and be writable." data-cn="file / mmap 类型的文件路径；必须指向文件而非目录，父目录须存在且可写。">File path for file/mmap types — must name a file, not a directory.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
 
                 <!-- pprof -->
                 <div>
@@ -492,7 +552,7 @@
                 <!-- downstreams -->
                 <div>
                     <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-arrow-right-from-bracket text-zinc-500 text-sm"></i> downstreams[]</h3>
-                    <p class="text-sm text-zinc-500 mb-3" data-en="Each entry defines one slave target. The slave_ids field controls which Slave IDs are routed here. Leave empty to match all." data-cn="每个条目定义一个从站目标，slave_ids 控制哪些 Slave ID 被路由到此。留空则匹配全部。">Each entry defines one slave target. <code>slave_ids</code> controls routing — leave empty to match all.</p>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="Each entry defines one slave target. The slave_ids field controls which Slave IDs are routed here; a default route is created only when there is exactly one downstream with an empty slave_ids. In v1, each local/injector entry must resolve to exactly one ID in 1-247 — configure multiple entries referencing the same model to expose several IDs." data-cn="每个条目定义一个从站目标，slave_ids 控制哪些 Slave ID 被路由到此；仅当只有一个下游且 slave_ids 为空时才会创建默认路由。在 v1 中，每个 local / injector 条目必须恰好解析出一个 1-247 范围内的 ID —— 如需暴露多个 ID，请配置多个引用同一模型的条目。">Each entry defines one slave target via <code>slave_ids</code>. In v1, each <code>local</code>/<code>injector</code> entry must resolve to exactly one ID in 1-247.</p>
                     <div class="overflow-x-auto rounded-lg border border-zinc-200">
                         <table class="w-full text-sm">
                             <thead class="bg-zinc-50 border-b border-zinc-200">
@@ -503,12 +563,36 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-100 font-mono">
-                                <tr><td class="px-4 py-2 text-purple-600">type</td><td class="px-4 py-2 text-zinc-600 font-sans">tcp · rtu · rtu-over-tcp · local</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Slave connection type. local uses the built-in virtual slave." data-cn="从站连接类型，local 使用内置虚拟从站。">Slave connection type. <code>local</code> = built-in virtual slave.</td></tr>
-                                <tr><td class="px-4 py-2 text-purple-600">slave_ids</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='Routing rule. Formats: "1" · "1,2,3" · "1-10". Empty = match all.' data-cn='路由规则。格式："1" · "1,2,3" · "1-10"。留空匹配全部。'>Routing rule. Formats: <code>"1"</code> · <code>"1,2,3"</code> · <code>"1-10"</code>. Empty = match all.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">type</td><td class="px-4 py-2 text-zinc-600 font-sans">tcp · rtu · rtu-over-tcp · local · injector</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Slave connection type. local is the built-in virtual slave; injector maps external writes into a shared model without touching its source table." data-cn="从站连接类型。local 为内置虚拟从站；injector 将外部写请求映射进共享模型，且不修改其源表。">Slave connection type. <code>local</code> = built-in virtual slave; <code>injector</code> = write-mapping into a shared model.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">slave_ids</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='Routing rule. Formats: "1" · "1,2,3" · "1-10". IDs must not repeat within a gateway.' data-cn='路由规则。格式："1" · "1,2,3" · "1-10"。同一网关内 ID 不可重复。'>Routing rule. Formats: <code>"1"</code> · <code>"1,2,3"</code> · <code>"1-10"</code>. IDs must not repeat within a gateway.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">tcp.address</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Remote address for tcp / rtu-over-tcp types (e.g. 192.168.1.100:502)." data-cn="tcp / rtu-over-tcp 类型的远端地址（如 192.168.1.100:502）。">Remote address for tcp / rtu-over-tcp.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">serial.*</td><td class="px-4 py-2 text-zinc-600 font-sans">see Serial</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Serial port settings for rtu type." data-cn="rtu 类型的串口参数。">Serial port settings for rtu type.</td></tr>
-                                <tr><td class="px-4 py-2 text-purple-600">local.persistence.type</td><td class="px-4 py-2 text-zinc-600 font-sans">memory · file · mmap</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Storage backend for the local virtual slave." data-cn="本地虚拟从站的存储后端。">Storage backend for the local virtual slave.</td></tr>
-                                <tr><td class="px-4 py-2 text-purple-600">local.persistence.path</td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Directory path for file / mmap backends." data-cn="file / mmap 后端的目录路径。">Directory path for file / mmap backends.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">simulation.ref <span class="text-zinc-400 font-sans text-xs">(v1)</span></td><td class="px-4 py-2 text-zinc-600 font-sans">string</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Name of the simulations[] model this local/injector downstream binds to. Must match an existing entry." data-cn="该 local / injector 下游绑定的 simulations[] 模型名称，须与已声明的条目匹配。">Name of the <code>simulations[]</code> model this <code>local</code>/<code>injector</code> downstream binds to.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">simulation.mappings[] <span class="text-zinc-400 font-sans text-xs">(v1, injector only)</span></td><td class="px-4 py-2 text-zinc-600 font-sans">array</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="At least one mapping; not declared for local. See Mappings below." data-cn="至少一个映射；local 类型不声明此字段。详见下方 Mappings 说明。">At least one mapping; not declared for <code>local</code>. See Mappings below.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">local.persistence.* <span class="text-zinc-400 font-sans text-xs">(v0 legacy)</span></td><td class="px-4 py-2 text-zinc-600 font-sans">memory · file · mmap</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Legacy (version 0) inline persistence for a local downstream's own independent model. Rejected under version: 1 — use simulations[] + simulation.ref instead." data-cn="旧版（version 0）内联持久化配置，用于 local 下游自身的独立模型。在 version: 1 下会被拒绝 —— 请改用 simulations[] + simulation.ref。">Legacy (v0) inline persistence for an independent model; rejected under <code>version: 1</code>.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- mappings -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-arrows-turn-to-dots text-zinc-500 text-sm"></i> simulation.mappings[] <span class="text-zinc-400 font-normal text-sm">(injector downstreams only, v1)</span></h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="An injector accepts only FC05/FC06/FC15/FC16 and maps each write into the shared model's coils to discrete_inputs table or holding_registers to input_registers table, without modifying the source table. Each write must fit entirely within one mapping; source ranges in the same table of one injector must not overlap, and target ranges in the same table of a shared model must not overlap across gateways." data-cn="injector 仅接受 FC05/FC06/FC15/FC16，并将每次写入映射到共享模型的 coils→discrete_inputs 或 holding_registers→input_registers 表，且不修改源表。每次写入必须完全落在一个映射范围内；同一 injector 内同表的源区间不可重叠，同一共享模型内同表的目标区间也不可跨网关重叠。">Accepts only FC05/06/15/16, mapping <code>coils → discrete_inputs</code> or <code>holding_registers → input_registers</code> without touching the source table.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-56">Field</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-28">Type</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Description" data-cn="说明">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">source.table</td><td class="px-4 py-2 text-zinc-600 font-sans">coils · holding_registers</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Table the incoming write targets." data-cn="传入写请求所针对的表。">Table the incoming write targets.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">source.start_address / count</td><td class="px-4 py-2 text-zinc-600 font-sans">uint16</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="16-bit address range; start + count must not exceed 65536." data-cn="16 位地址区间；start + count 不得超过 65536。">16-bit address range; start + count must not exceed 65536.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">target.table</td><td class="px-4 py-2 text-zinc-600 font-sans">discrete_inputs · input_registers</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Read-only table the write is mirrored into." data-cn="写入被映射到的只读表。">Read-only table the write is mirrored into.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">target.start_address</td><td class="px-4 py-2 text-zinc-600 font-sans">uint16</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Target address = target.start_address + request address - source.start_address; uses the source count." data-cn="目标地址 = target.start_address + 请求地址 - source.start_address；数量沿用源区间的 count。">Target address = <code>target.start_address + request address - source.start_address</code>.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -533,12 +617,13 @@
                                 <tr><td class="px-4 py-2 text-purple-600">parity</td><td class="px-4 py-2 text-zinc-400 font-sans">N</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='"N" (none) · "E" (even) · "O" (odd).' data-cn='"N"（无）· "E"（偶）· "O"（奇）。'>"N" · "E" · "O"</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">stop_bits</td><td class="px-4 py-2 text-zinc-400 font-sans">1</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Stop bits (1 or 2)." data-cn="停止位（1 或 2）。">Stop bits.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">timeout</td><td class="px-4 py-2 text-zinc-400 font-sans">500ms</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Read timeout per request (e.g. 500ms, 1s)." data-cn="每次请求的读取超时（如 500ms、1s）。">Read timeout per request.</td></tr>
-                                <tr><td class="px-4 py-2 text-purple-600">rqst_pause</td><td class="px-4 py-2 text-zinc-400 font-sans">100ms</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Minimum pause between consecutive requests on the bus." data-cn="总线上连续请求之间的最小间隔。">Minimum pause between consecutive requests.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">rqst_pause</td><td class="px-4 py-2 text-zinc-400 font-sans">100ms</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Parsed duration; omitted/zero becomes 100ms. Not used by the current RTU transport." data-cn="解析为时长；省略或 0 时取 100ms。当前 RTU 传输层暂未使用该字段。">Parsed duration, default 100ms. Not used by the current RTU transport.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">rs485</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Enable RS485 RTS signal control." data-cn="启用 RS485 RTS 信号控制。">Enable RS485 RTS signal control.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">delay_rts_before_send</td><td class="px-4 py-2 text-zinc-400 font-sans">0</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="RTS assertion delay before sending (e.g. 2ms)." data-cn="发送前 RTS 置位延迟（如 2ms）。">RTS assertion delay before sending.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">delay_rts_after_send</td><td class="px-4 py-2 text-zinc-400 font-sans">0</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="RTS de-assertion delay after sending." data-cn="发送后 RTS 取消延迟。">RTS de-assertion delay after sending.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">rts_high_during_send</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Keep RTS high during transmission." data-cn="发送期间保持 RTS 高电平。">Keep RTS high during transmission.</td></tr>
                                 <tr><td class="px-4 py-2 text-purple-600">rts_high_after_send</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Keep RTS high after transmission." data-cn="发送完成后保持 RTS 高电平。">Keep RTS high after transmission.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">rx_during_tx</td><td class="px-4 py-2 text-zinc-400 font-sans">false</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Allow receiving while transmitting." data-cn="允许在发送期间同时接收。">Allow receiving while transmitting.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -558,7 +643,52 @@
                             </thead>
                             <tbody class="divide-y divide-zinc-100 font-mono">
                                 <tr><td class="px-4 py-2 text-purple-600">log.level</td><td class="px-4 py-2 text-zinc-400 font-sans">info</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='"debug" · "info" · "warn" · "error"' data-cn='"debug" · "info" · "warn" · "error"'>"debug" · "info" · "warn" · "error"</td></tr>
-                                <tr><td class="px-4 py-2 text-purple-600">log.file</td><td class="px-4 py-2 text-zinc-400 font-sans">""</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Log file path. Empty string outputs to stdout." data-cn="日志文件路径，为空则输出到 stdout。">Log file path. Empty = stdout.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">log.file</td><td class="px-4 py-2 text-zinc-400 font-sans">""</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en='Empty or "-" outputs to stdout; otherwise an append-only file (parent directories are not created).' data-cn='为空或 "-" 时输出到 stdout；否则以追加方式写入指定文件（不会自动创建父目录）。'>Empty or "-" = stdout; otherwise an append-only file.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- timeouts -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-stopwatch text-zinc-500 text-sm"></i> <span data-en="Timeouts & Limits (not YAML-configurable)" data-cn="超时与限制（不可通过 YAML 配置）">Timeouts &amp; Limits (not YAML-configurable)</span></h3>
+                    <p class="text-sm text-zinc-500 mb-3" data-en="These are fixed in code, not YAML fields." data-cn="以下限制固化在代码中，并非 YAML 字段。">These are fixed in code, not YAML fields.</p>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-64">Item</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Behavior" data-cn="行为">Behavior</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-purple-600">TCP / RTU-over-TCP downstream</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Connection and interaction timeout fixed at 10 seconds." data-cn="连接与交互超时固定为 10 秒。">Connection and interaction timeout fixed at 10 seconds.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">Gateway dispatch</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="2-second context, not a reliable end-to-end limit: lock waits, network I/O, and serial behavior still affect latency." data-cn="2 秒调度上下文，并非可靠的端到端限制：锁等待、网络 I/O 和串口行为仍会影响实际时延。">2-second context; not a reliable end-to-end latency guarantee.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">RTU downstream idle</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Closes after 60 seconds idle and reopens on demand." data-cn="空闲 60 秒后关闭，按需重新打开。">Closes after 60 seconds idle and reopens on demand.</td></tr>
+                                <tr><td class="px-4 py-2 text-purple-600">Local table size</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Each of the four tables has 65536 addresses (0-65535); new models start at zero." data-cn="四张表各有 65536 个地址（0-65535）；新模型初始值均为 0。">Each of the four tables has 65536 addresses (0-65535).</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- exceptions -->
+                <div>
+                    <h3 class="text-lg font-bold mb-1 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation text-zinc-500 text-sm"></i> <span data-en="Exception Codes" data-cn="异常响应码">Exception Codes</span></h3>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200">
+                        <table class="w-full text-sm">
+                            <thead class="bg-zinc-50 border-b border-zinc-200">
+                                <tr>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700" data-en="Condition" data-cn="条件">Condition</th>
+                                    <th class="text-left px-4 py-2 font-semibold text-zinc-700 w-56" data-en="Response" data-cn="响应">Response</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-100 font-mono">
+                                <tr><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Unsupported local/injector function" data-cn="不支持的 local / injector 功能码">Unsupported local/injector function</td><td class="px-4 py-2 text-purple-600">0x01</td></tr>
+                                <tr><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Local address out of range, unmapped injection, or boundary crossing" data-cn="local 地址越界、未映射的注入或跨边界写入">Local address out of range, unmapped injection, or boundary crossing</td><td class="px-4 py-2 text-purple-600">0x02</td></tr>
+                                <tr><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Some local request length/quantity validation failures" data-cn="部分 local 请求长度 / 数量校验失败">Some local request length/quantity validation failures</td><td class="px-4 py-2 text-purple-600">0x03</td></tr>
+                                <tr><td class="px-4 py-2 text-zinc-500 font-sans" data-en="TCP/RTU-over-TCP handler error, including no route" data-cn="TCP / RTU-over-TCP 处理错误，含无路由">TCP/RTU-over-TCP handler error, including no route</td><td class="px-4 py-2 text-purple-600">0x04</td></tr>
+                                <tr><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Context deadline / request timed out (not every network timeout maps here)" data-cn="上下文超时 / 请求超时（并非所有网络超时都会映射到此码）">Context deadline / request timed out (not every network timeout maps here)</td><td class="px-4 py-2 text-purple-600">0x0B</td></tr>
+                                <tr><td class="px-4 py-2 text-zinc-500 font-sans" data-en="RTU handler error" data-cn="RTU 处理错误">RTU handler error</td><td class="px-4 py-2 text-zinc-500 font-sans" data-en="Logs the error and sends no response; the master typically times out." data-cn="记录错误但不发送响应，主站通常会超时。">No response sent; master times out</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -581,7 +711,8 @@
                 <div class="flex gap-6 text-sm font-medium text-zinc-600">
                     <a href="https://github.com/ffutop/modbus-gateway" class="hover:text-zinc-900 transition-colors">GitHub</a>
                     <a href="https://github.com/ffutop/modbus-gateway/issues" class="hover:text-zinc-900 transition-colors">Issues</a>
-                    <a href="LICENSE" class="hover:text-zinc-900 transition-colors">BSD License</a>
+                    <a href="https://hub.docker.com/r/ffutop/modbus-gateway" class="hover:text-zinc-900 transition-colors">Docker Hub</a>
+                    <a href="https://github.com/ffutop/modbus-gateway/blob/main/LICENSE" class="hover:text-zinc-900 transition-colors">BSD-3-Clause</a>
                 </div>
             </div>
         </div>
