@@ -19,7 +19,7 @@ gateways:
         local:
           persistence:
             type: "mmap"
-            path: "/data/"
+            path: "/data/modbus-slave.bin" # File path; create /data and grant write access first.
 
   # Example: another gateway instance, TCP proxy (TCP to TCP)
   - name: "gateway-tcp-bridge"
