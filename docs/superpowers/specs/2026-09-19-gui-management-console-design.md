@@ -48,7 +48,7 @@
 
 **选择 Electron 的理由：** Go 代码只需要加几个启动参数；服务端产物原样复用，不需要 CGO；自带 Chromium，三个系统渲染一致，也不依赖系统里装了什么；打包、签名、公证、单实例、原生菜单都有成熟的现成方案。
 
-**接受的代价：** 安装包约 90–120 MB，内存占用约 150–300 MB；需要新增 Node 工具链，并跟进 Chromium 的安全更新。桌面版面向工程师电脑和带显示器的工控机，可以接受这些代价；资源紧张的设备用服务端二进制。
+**接受的代价：** 安装包约 130–140 MB（实测 macOS x64 的 dmg 为 137 MB，解压后 301 MB），内存占用约 150–300 MB；需要新增 Node 工具链，并跟进 Chromium 的安全更新。桌面版面向工程师电脑和带显示器的工控机，可以接受这些代价；资源紧张的设备用服务端二进制。
 
 **不支持的系统：** 新版 Electron 已不支持 Win7/8。这类机器使用"服务端二进制 + 浏览器"。
 
@@ -149,15 +149,15 @@ ui:
 
 | 行为 | 规定 |
 |---|---|
-| 启动 | 选定配置文件后启动子进程，等待就绪信号（超时 10 秒）后加载 `http://<addr>/`。启动失败时显示子进程最后几行输出和退出码，例如端口被占用、串口打不开 |
+| 启动 | 选定配置文件后启动子进程，等待就绪信号（超时 10 秒）后加载 `http://<addr>/`。启动失败（配置有错、二进制缺失等）时，加载本地页面显示原因和子进程最后几行输出。注意 Modbus 端口被占用不属于启动失败：网关会记录错误并继续运行，可在「网关输出」中看到 |
 | token | 每次启动生成随机 token；由主进程通过 `session.webRequest` 给每个请求加上 `Authorization: Bearer <token>`，页面 JS 不接触 token |
-| 配置文件 | 通过原生文件对话框打开，记住最近打开的文件。首次启动时在系统的用户配置目录下生成示例配置 |
+| 配置文件 | 选择顺序：环境变量 `MODMUX_CONFIG`（开发与测试）> 最近打开的文件 > 用户数据目录下的 `config.yaml`。首次启动时生成示例配置（v1，一个内存模拟从站，只监听 `127.0.0.1:5020`）。「文件 → 打开配置」通过原生对话框切换文件并重启网关；最近打开的文件（最多 8 个）记在用户数据目录的 `settings.json` |
 | 重启 | 工具栏和菜单提供「重启网关」：Electron 先关闭子进程的 stdin，等子进程退出后用同一个配置文件重新启动。界面上"保存后需重启生效"的提示里，在桌面版直接给出这个按钮 |
 | 子进程意外退出 | 窗口提示"网关已停止"，显示退出码和最后几行输出，提供"重新启动"按钮；不自动循环重启 |
 | 网关输出 | 子进程的 stdout 和 stderr 接到底部面板的「网关输出」标签页，只有桌面版有这个标签页 |
-| 窗口 | 由 `BrowserWindow` 强制最小尺寸 1280×720；提供原生菜单：文件（打开配置、最近打开、保存、退出）、编辑、视图、帮助 |
+| 窗口 | 由 `BrowserWindow` 强制最小尺寸 1280×720，并设置 `useContentSize`，使最小尺寸按网页内容区计算（否则 macOS 标题栏会占去高度，触发控制台的"窗口过小"遮罩）。原生菜单：文件（打开配置、最近打开、重启网关、退出）、编辑、视图（详情 `Cmd/Ctrl+1`、拓扑 `Cmd/Ctrl+2`、重新载入、全屏）、窗口 |
 | 单实例 | 用 `requestSingleInstanceLock` 保证只有一个实例，防止两个实例抢同一个 Modbus 端口或串口；再次启动时聚焦已有窗口 |
-| 关闭窗口 | 关闭窗口即停止转发；网关运行中时先弹窗确认。最小化到托盘、后台继续转发不在本期 |
+| 关闭窗口 | 关闭窗口即停止转发；网关运行中时先弹窗确认，`Cmd+Q` 走同一流程；网关没有运行时直接退出。最小化到托盘、后台继续转发不在本期 |
 | 安全基线 | `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`；只允许加载子进程地址；外部链接用系统浏览器打开 |
 
 生产环境长期运行建议仍然使用服务端二进制，配合 Windows 服务、systemd 或 Docker。桌面版定位于调试、配置和小规模运行。
@@ -237,13 +237,14 @@ ui:
 |---|---|---|
 | 服务端二进制（现有） | linux / windows / darwin × amd64 / arm64 | `.tar.gz` / `.zip` |
 | Docker 镜像（现有） | linux/amd64、linux/arm64 | `ffutop/modbus-gateway` |
-| **桌面版（新增）** | Windows x64 / ARM64 | NSIS 安装包，另附免安装版 |
-| | macOS arm64 / x64 | 按架构分别提供 `.dmg` |
-| | Linux x64 / arm64 | AppImage、`.deb` |
+| **桌面版（新增）** | Windows x64 / ARM64 | NSIS 安装包 `ModMux-<版本>-win-<架构>.exe`，另附免安装版 `…-portable.exe` |
+| | macOS x64 / arm64 | 按架构分别提供 `ModMux-<版本>-mac-<架构>.dmg` |
+| | Linux x64 / arm64 | `ModMux-<版本>-linux-<架构>.AppImage` 与 `.deb` |
 
-- **构建：** 用 `electron-builder` 打包。桌面版直接使用现有构建任务产出的对应平台服务端二进制，放进安装包的 `resources/`。打包任务依赖现有的 Go 构建任务，在 `windows-latest`、`macos-latest`、`ubuntu-latest`（x64）和 Ubuntu arm64 runner 上分别执行。现有的 Go 构建任务和 Docker 构建任务不变。
+- **构建：** `npm run dist:<系统>-<架构>`（`desktop/scripts/dist.js`）先用 `go build` 交叉编译对应平台的服务端二进制，放进安装包的 `resources/bin/`，再调用 `electron-builder`。安装包文件名中的系统和架构统一写成 `mac/win/linux` 与 `x64/arm64`，不使用 electron-builder 按包格式变化的架构名（如 `x86_64`、`amd64`）。发布流水线的 `build-desktop` 任务每个系统只用一个标准 runner（`macos-latest`、`windows-latest`、`ubuntu-latest`）构建两种架构：应用没有原生 Node 模块，Go 二进制是交叉编译的。现有的 Go 构建任务和 Docker 构建任务不变。
+- **本地验证范围：** 6 个组合都已在 macOS 上构建成功，并核对过安装包内二进制的系统与架构；实际运行验证只覆盖 macOS x64（`npm run test:packaged` 直接启动打包后的应用）。其余组合的运行验证依赖第 9 节第 9 条的实机测试。
 - **版本：** 桌面版和服务端二进制使用同一个 tag 和版本号，在同一个 GitHub Release 中发布。
-- **签名：** 不购买代码签名证书，桌面版以未签名形式发布。macOS 版只做 ad-hoc 签名（Apple Silicon 上程序必须带签名才能运行，ad-hoc 签名不需要证书）。由此带来的安装拦截由用户自行放行，README 和 Release 说明中给出各系统的放行步骤：
+- **签名：** 不购买代码签名证书，桌面版以未签名形式发布。macOS 版只做 ad-hoc 签名（Apple Silicon 上程序必须带签名才能运行，ad-hoc 签名不需要证书），并关闭 hardened runtime：它只在公证时有意义，开启后反而可能因库校验导致应用无法启动。由此带来的安装拦截由用户自行放行，README 和 Release 说明中给出各系统的放行步骤：
   - **Windows：** SmartScreen 提示时，点「更多信息 → 仍要运行」。
   - **macOS：** 在「系统设置 → 隐私与安全性」中点「仍要打开」；如果提示"已损坏，无法打开"，执行 `xattr -dr com.apple.quarantine /Applications/<应用名>.app` 去掉隔离标记。
   - **Linux：** 没有拦截。AppImage 需要先 `chmod +x`。
