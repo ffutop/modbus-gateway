@@ -5,6 +5,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -571,4 +572,69 @@ gateways:
             - source: { table: coils, start_address: 100, count: 10 }
               target: { table: discrete_inputs, start_address: 10 }
 `)
+}
+
+func TestLoadConfig_ReportsTheFileItReadAndItsRevision(t *testing.T) {
+	content := "gateways:\n  - name: gw\n    upstreams: [{ type: tcp, tcp: { address: \":1502\" } }]\n    downstreams: [{ type: tcp, tcp: { address: \"10.0.0.1:502\" } }]\n"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Path != path || cfg.Revision != Revision([]byte(content)) {
+		t.Errorf("Path=%q Revision=%q, want %q and the content's revision", cfg.Path, cfg.Revision, path)
+	}
+}
+
+func uiProblems(t *testing.T, yaml string) []Problem {
+	t.Helper()
+	cfg, err := ParseDraft([]byte(yaml))
+	if err != nil {
+		t.Fatalf("ParseDraft: %v", err)
+	}
+	var out []Problem
+	for _, p := range cfg.Problems() {
+		if len(p.Path) > 0 && p.Path[0] == "ui" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func TestUI_ListenIsCheckedWhenEnabled(t *testing.T) {
+	const gateways = `
+gateways:
+  - name: gw
+    upstreams: [{ type: tcp, tcp: { address: "0.0.0.0:8090" } }]
+    downstreams: [{ type: tcp, tcp: { address: "10.0.0.1:502" } }]
+`
+	tests := []struct {
+		name, ui string
+		wantErr  bool
+	}{
+		{"disabled ignores listen", "ui: { enabled: false, listen: nonsense }", false},
+		{"valid loopback", `ui: { enabled: true, listen: "127.0.0.1:9000" }`, false},
+		{"any free port", `ui: { enabled: true, listen: "127.0.0.1:0" }`, false},
+		{"not host:port", "ui: { enabled: true, listen: nonsense }", true},
+		{"port out of range", `ui: { enabled: true, listen: "127.0.0.1:70000" }`, true},
+		{"same port as a wildcard upstream", `ui: { enabled: true, listen: "127.0.0.1:8090" }`, true},
+		{"default listen collides too", "ui: { enabled: true }", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, version := range []string{"", "version: 1\n"} {
+				got := uiProblems(t, version+tt.ui+gateways)
+				if tt.wantErr && (len(got) != 1 || fmt.Sprint(got[0].Path) != "[ui listen]") {
+					t.Errorf("%q: problems %+v, want one at [ui listen]", version, got)
+				}
+				if !tt.wantErr && len(got) != 0 {
+					t.Errorf("%q: unexpected problems %+v", version, got)
+				}
+			}
+		})
+	}
 }

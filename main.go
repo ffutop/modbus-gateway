@@ -6,20 +6,27 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	_ "net/http/pprof" // Register pprof handlers
 	"os"
 	"os/signal"
+	"sort"
 	"sync"
 	"syscall"
+	"time"
 
+	"github.com/ffutop/modbus-gateway/internal/api"
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
+	"github.com/ffutop/modbus-gateway/internal/telemetry"
 	"github.com/ffutop/modbus-gateway/transport"
 	"github.com/ffutop/modbus-gateway/transport/injector"
 	"github.com/ffutop/modbus-gateway/transport/local"
@@ -28,8 +35,13 @@ import (
 	"github.com/ffutop/modbus-gateway/transport/tcp"
 )
 
+// version is overridden at release build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	configFile := flag.String("config", "", "Path to config file")
+	uiListen := flag.String("ui-listen", "", "Enable the management API on this address, overriding the config's ui section (port 0 = any free port)")
+	exitOnStdinEOF := flag.Bool("exit-on-stdin-eof", false, "Shut down gracefully when stdin is closed (used by the desktop shell)")
 	flag.Parse()
 
 	// Load Configuration
@@ -40,6 +52,13 @@ func main() {
 	}
 
 	setupLogger(cfg.Log)
+
+	// The desktop shell starts the gateway with -ui-listen and reads the
+	// actual address back from the ui_ready line on stdout.
+	announceUI := *uiListen != ""
+	if announceUI {
+		cfg.UI = config.UIConfig{Enabled: true, Listen: *uiListen}
+	}
 
 	if cfg.Pprof.Enabled {
 		addr := cfg.Pprof.Address
@@ -75,6 +94,13 @@ func main() {
 		simulations[simCfg.Name] = sim
 	}
 
+	// Telemetry only exists for the management console; without `ui` the
+	// forwarding path is exactly what it was before.
+	var recorder *telemetry.Recorder
+	if cfg.UI.Enabled {
+		recorder = telemetry.NewRecorder(1000)
+	}
+
 	// Create Gateways
 	var gateways []*gateway.Gateway
 
@@ -85,6 +111,7 @@ func main() {
 		// Setup Routing
 		routes := make(map[byte]transport.Downstream)
 		var defaultRoute transport.Downstream
+		names := make(map[transport.Downstream]string)
 
 		// Compatibility Check: If only one downstream and no SlaveIDs, treat as default route
 		if len(gwCfg.Downstreams) == 1 && gwCfg.Downstreams[0].SlaveIDs == "" {
@@ -94,15 +121,17 @@ func main() {
 				continue
 			}
 			defaultRoute = ds
+			names[ds] = downstreamName(gwCfg.Downstreams[0], 0)
 			slog.Info("Configured default route (legacy mode)", "gateway", gwCfg.Name)
 		} else {
 			// Routing Mode
-			for _, dsCfg := range gwCfg.Downstreams {
+			for i, dsCfg := range gwCfg.Downstreams {
 				ds, err := createDownstream(dsCfg, simulations)
 				if err != nil {
 					slog.Error("Failed to create downstream", "gateway", gwCfg.Name, "err", err)
 					continue
 				}
+				names[ds] = downstreamName(dsCfg, i)
 
 				ids, err := gateway.ParseSlaveIDs(dsCfg.SlaveIDs)
 				if err != nil {
@@ -150,6 +179,8 @@ func main() {
 		}
 
 		gw := gateway.NewGateway(gwCfg.Name, upstreams, routes, defaultRoute)
+		gw.Telemetry = recorder
+		gw.DownstreamNames = names
 		gateways = append(gateways, gw)
 	}
 
@@ -170,13 +201,37 @@ func main() {
 		}(gw)
 	}
 
-	// Wait for Signal
+	uiServer := startUI(cfg.UI, os.Getenv("MODMUX_UI_TOKEN"), announceUI, api.Deps{
+		Version:         version,
+		ConfigPath:      cfg.Path,
+		StartupRevision: cfg.Revision,
+		Simulations:     sortedSimulations(simulations),
+		Telemetry:       recorder,
+	})
+
+	// Wait for a signal, or (desktop shell) for stdin to close. Closing stdin
+	// is how the shell stops us on every OS: on Windows killing a child is a
+	// hard kill that would skip flushing persistence, and if the shell crashes
+	// the OS closes the pipe for it.
+	stop := make(chan string, 2)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	go func() { stop <- (<-sigChan).String() }()
+	if *exitOnStdinEOF {
+		go func() {
+			io.Copy(io.Discard, os.Stdin)
+			stop <- "stdin closed"
+		}()
+	}
+	reason := <-stop
 
-	slog.Info("Shutting down...")
+	slog.Info("Shutting down...", "reason", reason)
 
+	if uiServer != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		uiServer.Shutdown(shutdownCtx)
+		shutdownCancel()
+	}
 	cancel()
 	wg.Wait()
 
@@ -240,4 +295,51 @@ func setupLogger(cfg config.LogConfig) {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 	slog.SetDefault(slog.New(handler))
+}
+
+// startUI serves the management API when enabled; it returns nil otherwise,
+// so a config without `ui` opens no extra port. A non-empty token makes every
+// request authenticate; announce prints {"event":"ui_ready","addr":...} on
+// stdout once listening, for the desktop shell.
+func startUI(cfg config.UIConfig, token string, announce bool, deps api.Deps) *http.Server {
+	if !cfg.Enabled {
+		return nil
+	}
+	addr := cfg.Address()
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		slog.Error("Failed to start management API", "addr", addr, "err", err)
+		os.Exit(1)
+	}
+	actual := ln.Addr().String()
+	srv := &http.Server{Handler: api.Guard(api.NewHandler(deps), token, api.IsLoopbackAddr(actual))}
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			slog.Error("Management API stopped", "addr", actual, "err", err)
+		}
+	}()
+	slog.Info("Started management API", "addr", actual, "token_required", token != "")
+	if announce {
+		ready, _ := json.Marshal(map[string]string{"event": "ui_ready", "addr": actual})
+		fmt.Println(string(ready))
+	}
+	return srv
+}
+
+func sortedSimulations(m map[string]*simulation.Simulation) []*simulation.Simulation {
+	sims := make([]*simulation.Simulation, 0, len(m))
+	for _, s := range m {
+		sims = append(sims, s)
+	}
+	sort.Slice(sims, func(i, j int) bool { return sims[i].Name < sims[j].Name })
+	return sims
+}
+
+// downstreamName labels a downstream in telemetry; unnamed downstreams fall
+// back to "<type>#<index within its gateway>".
+func downstreamName(cfg config.DownstreamConfig, index int) string {
+	if cfg.Name != "" {
+		return cfg.Name
+	}
+	return fmt.Sprintf("%s#%d", cfg.Type, index)
 }

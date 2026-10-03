@@ -6,12 +6,14 @@ package gateway
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/routing"
+	"github.com/ffutop/modbus-gateway/internal/telemetry"
 	"github.com/ffutop/modbus-gateway/modbus"
 	"github.com/ffutop/modbus-gateway/transport"
 )
@@ -23,6 +25,11 @@ type Gateway struct {
 	Upstreams    []transport.Upstream
 	Routes       map[byte]transport.Downstream
 	DefaultRoute transport.Downstream
+
+	// Telemetry, when set, receives one event per handled request.
+	Telemetry *telemetry.Recorder
+	// DownstreamNames labels downstreams in telemetry events.
+	DownstreamNames map[transport.Downstream]string
 }
 
 // NewGateway creates a new Gateway instance
@@ -90,6 +97,44 @@ func (g *Gateway) Start(ctx context.Context) error {
 
 // handleRequest is the central dispatch function
 func (g *Gateway) handleRequest(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
+	start := time.Now()
+	resp, target, err := g.forward(ctx, slaveID, pdu)
+	if g.Telemetry != nil {
+		addr, qty := requestRange(pdu)
+		g.Telemetry.Record(telemetry.Event{
+			Time:         start,
+			Gateway:      g.Name,
+			Downstream:   g.DownstreamNames[target],
+			Source:       transport.SourceAddr(ctx),
+			SlaveID:      slaveID,
+			FunctionCode: pdu.FunctionCode,
+			Address:      addr,
+			Quantity:     qty,
+			Duration:     time.Since(start),
+			Err:          err,
+		})
+	}
+	return resp, err
+}
+
+// requestRange extracts the starting address and quantity of the standard
+// read/write functions; other functions report zero.
+func requestRange(pdu modbus.ProtocolDataUnit) (address, quantity uint16) {
+	if len(pdu.Data) < 4 {
+		return 0, 0
+	}
+	address = binary.BigEndian.Uint16(pdu.Data[0:2])
+	switch pdu.FunctionCode {
+	case 1, 2, 3, 4, 15, 16:
+		return address, binary.BigEndian.Uint16(pdu.Data[2:4])
+	case 5, 6:
+		return address, 1
+	}
+	return 0, 0
+}
+
+// forward routes pdu to its downstream; target is nil when no route matched.
+func (g *Gateway) forward(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, transport.Downstream, error) {
 	// Route Lookup
 	var target transport.Downstream
 	if ds, ok := g.Routes[slaveID]; ok {
@@ -99,7 +144,7 @@ func (g *Gateway) handleRequest(ctx context.Context, slaveID byte, pdu modbus.Pr
 	} else {
 		// No route found
 		slog.Warn("No route found for slave ID", "gateway", g.Name, "slaveID", slaveID)
-		return modbus.ProtocolDataUnit{}, fmt.Errorf("gateway path unavailable")
+		return modbus.ProtocolDataUnit{}, nil, fmt.Errorf("gateway path unavailable")
 	}
 
 	// Forward to Downstream
@@ -110,8 +155,8 @@ func (g *Gateway) handleRequest(ctx context.Context, slaveID byte, pdu modbus.Pr
 	respPdu, err := target.Send(ctx, slaveID, pdu)
 	if err != nil {
 		slog.Error("Downstream request failed", "gateway", g.Name, "slaveID", slaveID, "func", pdu.FunctionCode, "err", err)
-		return modbus.ProtocolDataUnit{}, err
+		return modbus.ProtocolDataUnit{}, target, err
 	}
 
-	return respPdu, nil
+	return respPdu, target, nil
 }
