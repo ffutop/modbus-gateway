@@ -33,6 +33,7 @@ import (
 	"github.com/ffutop/modbus-gateway/transport/rtu"
 	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
 	"github.com/ffutop/modbus-gateway/transport/tcp"
+	"github.com/ffutop/modbus-gateway/web"
 )
 
 // version is overridden at release build time via -ldflags "-X main.version=...".
@@ -207,6 +208,7 @@ func main() {
 		StartupRevision: cfg.Revision,
 		Simulations:     sortedSimulations(simulations),
 		Telemetry:       recorder,
+		Static:          web.Assets,
 	})
 
 	// Wait for a signal, or (desktop shell) for stdin to close. Closing stdin

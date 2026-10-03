@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ModMux 控制台</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header class="tool" id="toolbar"></header>
+  <div class="main">
+    <nav class="side" id="side" role="tree" aria-label="资源"></nav>
+    <section class="center" id="center" aria-label="编辑区"></section>
+    <aside class="insp" id="insp" aria-label="检查器"></aside>
+    <section class="dock" id="dock" aria-label="底部面板"></section>
+  </div>
+  <footer class="status" id="status"></footer>
+</div>
+<div id="tiny" role="alert"><b>窗口尺寸低于最小要求 1280 × 720</b><span id="tiny-now"></span></div>
+<script src="app.js"></script>
+</body>
+</html>

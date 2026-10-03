@@ -1,0 +1,11 @@
+{
+  "name": "modbus-gateway-e2e",
+  "private": true,
+  "description": "Browser tests for the management console, run against the built modbus-gateway binary.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.52.0"
+  }
+}

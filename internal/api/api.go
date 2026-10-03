@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -29,6 +30,8 @@ type Deps struct {
 	StartupRevision string
 	Simulations     []*simulation.Simulation
 	Telemetry       *telemetry.Recorder
+	// Static is the console front end, served at "/".
+	Static fs.FS
 }
 
 // NewHandler returns the handler for every /api/v1/ endpoint.
@@ -84,6 +87,9 @@ func NewHandler(d Deps) http.Handler {
 		}
 		writeError(w, http.StatusNotFound, "simulation %q not found", name)
 	}))
+	if d.Static != nil {
+		mux.Handle("/", http.FileServer(http.FS(d.Static)))
+	}
 	return mux
 }
 
