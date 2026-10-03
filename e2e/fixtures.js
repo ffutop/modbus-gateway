@@ -94,6 +94,8 @@ exports.test = base.test.extend({
   page: async ({ page }, use) => {
     const errors = [];
     page.on('pageerror', (err) => errors.push(err));
+    // A Content-Security-Policy block only logs to the console.
+    page.on('console', (msg) => { if (/Content Security Policy/i.test(msg.text())) errors.push(new Error(msg.text())); });
     await use(page);
     base.expect(errors, `uncaught page errors:\n${errors.map((e) => e.stack).join('\n')}`).toEqual([]);
   },

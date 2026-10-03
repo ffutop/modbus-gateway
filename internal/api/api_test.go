@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/config"
@@ -566,5 +567,42 @@ func TestSave_RefusesLegacyV0Configs(t *testing.T) {
 	}
 	if content, _ := os.ReadFile(path); string(content) != v0 {
 		t.Error("v0 config was modified")
+	}
+}
+
+func TestHandler_WithoutTelemetryServesEmptyMetricsInsteadOfPanicking(t *testing.T) {
+	h := NewHandler(Deps{})
+	var got struct {
+		Gateways []any `json:"gateways"`
+	}
+	getJSON(t, h, "/api/v1/metrics", &got)
+	if got.Gateways == nil || len(got.Gateways) != 0 {
+		t.Errorf("gateways = %v, want an empty list", got.Gateways)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/event-stream" {
+		t.Errorf("events: %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+}
+
+func TestHandler_SetsHeadersThatStopFramingAndSniffing(t *testing.T) {
+	h := NewHandler(Deps{Static: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}})
+	for _, path := range []string{"/", "/api/v1/status"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		hdr := rec.Header()
+		if hdr.Get("X-Frame-Options") != "DENY" || hdr.Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: X-Frame-Options=%q X-Content-Type-Options=%q", path, hdr.Get("X-Frame-Options"), hdr.Get("X-Content-Type-Options"))
+		}
+		csp := hdr.Get("Content-Security-Policy")
+		for _, want := range []string{"frame-ancestors 'none'", "script-src 'self'", "default-src 'self'"} {
+			if !strings.Contains(csp, want) {
+				t.Errorf("%s: CSP %q lacks %q", path, csp, want)
+			}
+		}
 	}
 }

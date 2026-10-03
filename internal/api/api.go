@@ -90,7 +90,26 @@ func NewHandler(d Deps) http.Handler {
 	if d.Static != nil {
 		mux.Handle("/", http.FileServer(http.FS(d.Static)))
 	}
-	return mux
+	return secureHeaders(mux)
+}
+
+// consolePolicy lets the console load only its own files and talk only to
+// its own origin. Inline style attributes are used by the page's templates;
+// scripts are never inline.
+const consolePolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+
+// secureHeaders stops other sites from framing the console (clickjacking
+// on a loopback API without login) and browsers from sniffing content types.
+func secureHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hdr := w.Header()
+		hdr.Set("Content-Security-Policy", consolePolicy)
+		hdr.Set("X-Frame-Options", "DENY")
+		hdr.Set("X-Content-Type-Options", "nosniff")
+		hdr.Set("Referrer-Policy", "no-referrer")
+		h.ServeHTTP(w, r)
+	})
 }
 
 // Guard wraps the API with the checks its listener needs.

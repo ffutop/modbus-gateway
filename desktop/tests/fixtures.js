@@ -86,6 +86,8 @@ exports.test = base.test.extend({
     const win = await app.firstWindow();
     const errors = [];
     win.on('pageerror', (e) => errors.push(e));
+    // A Content-Security-Policy block only logs to the console.
+    win.on('console', (msg) => { if (/Content Security Policy/i.test(msg.text())) errors.push(new Error(msg.text())); });
     await use(win);
     base.expect(errors, `uncaught page errors:\n${errors.map((e) => e.stack).join('\n')}`).toEqual([]);
   },
