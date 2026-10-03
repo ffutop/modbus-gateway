@@ -31,21 +31,61 @@ type Problem struct {
 
 // Validate checks cross-cutting rules that can only be enforced once the
 // whole config has been parsed and normalized, and returns the first
-// violation. See Problems for the full list.
+// violation. It is what LoadConfig enforces; see Problems for the list the
+// console shows.
 func (c *Config) Validate() error {
-	if p := c.Problems(); len(p) > 0 {
+	if p := c.loadProblems(); len(p) > 0 {
 		return fmt.Errorf("%s", p[0].Message)
 	}
 	return nil
 }
 
-// Problems checks simulation references, slave ID routing (each ID routes to
-// at most one downstream per gateway), mapping validity/overlap (both within
-// an injector and across every injector sharing a simulation), single-slave-ID
-// entries, and (v1 only) duplicate upstream listen addresses. It runs for
-// both v0 and v1 configs; v0 configs simply never exercise the
-// injector/mapping branches.
+// Problems lists everything that would stop this config from starting: the
+// Validate rules plus the slave ID routing rules main.go applies while
+// building routing tables. LoadConfig does not enforce the routing rules
+// itself, so the command line keeps reporting them exactly as it always has.
 func (c *Config) Problems() []Problem {
+	return append(c.loadProblems(), c.routingProblems()...)
+}
+
+// routingProblems mirrors how main.go builds each gateway's routing table: a
+// lone downstream without slave_ids is the legacy default route, downstreams
+// of unknown type or without slave_ids are skipped, and every other
+// downstream's IDs must parse and route to it alone.
+func (c *Config) routingProblems() []Problem {
+	var problems []Problem
+	for gi, gw := range c.Gateways {
+		if len(gw.Downstreams) == 1 && gw.Downstreams[0].SlaveIDs == "" {
+			continue
+		}
+		routedBy := make(map[byte]string)
+		for di, ds := range gw.Downstreams {
+			if !knownDownstreamTypes[ds.Type] || ds.SlaveIDs == "" {
+				continue
+			}
+			path := []any{"gateways", gi, "downstreams", di, "slave_ids"}
+			name := ds.DisplayName(di)
+			ids, err := routing.ParseSlaveIDs(ds.SlaveIDs)
+			if err != nil {
+				problems = append(problems, Problem{Path: path, Message: fmt.Sprintf("gateway %q downstream %q: invalid slave_ids %q: %v", gw.Name, name, ds.SlaveIDs, err)})
+				continue
+			}
+			for _, id := range ids {
+				if other, taken := routedBy[id]; taken {
+					problems = append(problems, Problem{Path: path, Message: fmt.Sprintf("gateway %q downstream %q: slave ID %d is already routed to downstream %q", gw.Name, name, id, other)})
+					break
+				}
+				routedBy[id] = name
+			}
+		}
+	}
+	return problems
+}
+
+// knownDownstreamTypes are the types main.go can create; it skips others.
+var knownDownstreamTypes = map[string]bool{"tcp": true, "rtu": true, "rtu-over-tcp": true, "local": true, "injector": true}
+
+func (c *Config) loadProblems() []Problem {
 	var problems []Problem
 	add := func(path []any, format string, args ...any) {
 		problems = append(problems, Problem{Path: path, Message: fmt.Sprintf(format, args...)})
@@ -81,27 +121,9 @@ func (c *Config) Problems() []Problem {
 			}
 		}
 
-		// A lone downstream without slave_ids is the legacy default route.
-		legacyDefault := len(gw.Downstreams) == 1 && gw.Downstreams[0].SlaveIDs == ""
-		routedBy := make(map[byte]string)
-
 		for di, ds := range gw.Downstreams {
 			dsPath := func(field ...any) []any { return append([]any{"gateways", gi, "downstreams", di}, field...) }
 			prefix := fmt.Sprintf("gateway %q downstream %q: ", gw.Name, ds.Name)
-
-			if !legacyDefault && ds.SlaveIDs != "" {
-				ids, err := routing.ParseSlaveIDs(ds.SlaveIDs)
-				if err != nil {
-					add(dsPath("slave_ids"), prefix+"invalid slave_ids %q: %v", ds.SlaveIDs, err)
-				}
-				for _, id := range ids {
-					if other, taken := routedBy[id]; taken {
-						add(dsPath("slave_ids"), prefix+"slave ID %d is already routed to downstream %q", id, other)
-						break
-					}
-					routedBy[id] = ds.Name
-				}
-			}
 
 			switch ds.Type {
 			case "local":

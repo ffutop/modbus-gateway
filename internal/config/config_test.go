@@ -638,3 +638,47 @@ gateways:
 		})
 	}
 }
+
+// Routing conflicts are reported by Problems (for the console, predicting
+// startup) but LoadConfig keeps accepting them: main.go has always reported
+// them itself while building routes, and the CLI's behavior must not change.
+func TestRouting_ProblemsPredictStartupWithoutChangingLoadConfig(t *testing.T) {
+	const dup = `
+gateways:
+  - name: g
+    upstreams: [{ type: tcp, tcp: { address: "127.0.0.1:46103" } }]
+    downstreams:
+      - { type: tcp, slave_ids: "1-5", tcp: { address: "127.0.0.1:9" } }
+      - { type: tcp, slave_ids: "5", tcp: { address: "127.0.0.1:9" } }
+`
+	if _, err := loadYAML(t, dup); err != nil {
+		t.Errorf("LoadConfig rejected a routing conflict (main.go reports those): %v", err)
+	}
+	cfg, err := ParseDraft([]byte(dup))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Problems(); len(p) != 1 || fmt.Sprint(p[0].Path) != "[gateways 0 downstreams 1 slave_ids]" || !strings.Contains(p[0].Message, `"tcp#0"`) {
+		t.Errorf("problems = %+v, want the conflict on downstreams[1] naming tcp#0", p)
+	}
+
+	// main.go skips a downstream it cannot create, so its slave IDs never
+	// conflict with anything and the gateway starts.
+	const badType = `
+gateways:
+  - name: g
+    upstreams: [{ type: tcp, tcp: { address: "127.0.0.1:46110" } }]
+    downstreams:
+      - { type: tcp, slave_ids: "3", tcp: { address: "127.0.0.1:9" } }
+      - { type: bogus, slave_ids: "3" }
+`
+	if _, err := loadYAML(t, badType); err != nil {
+		t.Errorf("LoadConfig rejected a config that has always started: %v", err)
+	}
+	cfg, _ = ParseDraft([]byte(badType))
+	for _, p := range cfg.Problems() {
+		if p.Path[len(p.Path)-1] == "slave_ids" {
+			t.Errorf("reported %+v for a downstream main.go skips", p)
+		}
+	}
+}

@@ -73,6 +73,15 @@ type DownstreamConfig struct {
 	Mappings []MappingConfig
 }
 
+// DisplayName labels a downstream in messages and telemetry; unnamed ones
+// fall back to "<type>#<index within its gateway>".
+func (d DownstreamConfig) DisplayName(index int) string {
+	if d.Name != "" {
+		return d.Name
+	}
+	return fmt.Sprintf("%s#%d", d.Type, index)
+}
+
 // MappingConfig maps a standard Modbus write source range to a target range
 // in the shared simulation model. Only used by "injector" downstreams.
 type MappingConfig struct {

@@ -122,7 +122,7 @@ func main() {
 				continue
 			}
 			defaultRoute = ds
-			names[ds] = downstreamName(gwCfg.Downstreams[0], 0)
+			names[ds] = gwCfg.Downstreams[0].DisplayName(0)
 			slog.Info("Configured default route (legacy mode)", "gateway", gwCfg.Name)
 		} else {
 			// Routing Mode
@@ -132,7 +132,7 @@ func main() {
 					slog.Error("Failed to create downstream", "gateway", gwCfg.Name, "err", err)
 					continue
 				}
-				names[ds] = downstreamName(dsCfg, i)
+				names[ds] = dsCfg.DisplayName(i)
 
 				ids, err := gateway.ParseSlaveIDs(dsCfg.SlaveIDs)
 				if err != nil {
@@ -215,19 +215,21 @@ func main() {
 	// is how the shell stops us on every OS: on Windows killing a child is a
 	// hard kill that would skip flushing persistence, and if the shell crashes
 	// the OS closes the pipe for it.
-	stop := make(chan string, 2)
+	stdinClosed := make(chan struct{})
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() { stop <- (<-sigChan).String() }()
 	if *exitOnStdinEOF {
 		go func() {
 			io.Copy(io.Discard, os.Stdin)
-			stop <- "stdin closed"
+			close(stdinClosed)
 		}()
 	}
-	reason := <-stop
-
-	slog.Info("Shutting down...", "reason", reason)
+	select {
+	case <-sigChan:
+		slog.Info("Shutting down...")
+	case <-stdinClosed:
+		slog.Info("Shutting down...", "reason", "stdin closed")
+	}
 
 	if uiServer != nil {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -342,13 +344,4 @@ func sortedSimulations(m map[string]*simulation.Simulation) []*simulation.Simula
 	}
 	sort.Slice(sims, func(i, j int) bool { return sims[i].Name < sims[j].Name })
 	return sims
-}
-
-// downstreamName labels a downstream in telemetry; unnamed downstreams fall
-// back to "<type>#<index within its gateway>".
-func downstreamName(cfg config.DownstreamConfig, index int) string {
-	if cfg.Name != "" {
-		return cfg.Name
-	}
-	return fmt.Sprintf("%s#%d", cfg.Type, index)
 }

@@ -97,23 +97,25 @@ func (g *Gateway) Start(ctx context.Context) error {
 
 // handleRequest is the central dispatch function
 func (g *Gateway) handleRequest(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
+	if g.Telemetry == nil {
+		resp, _, err := g.forward(ctx, slaveID, pdu)
+		return resp, err
+	}
 	start := time.Now()
 	resp, target, err := g.forward(ctx, slaveID, pdu)
-	if g.Telemetry != nil {
-		addr, qty := requestRange(pdu)
-		g.Telemetry.Record(telemetry.Event{
-			Time:         start,
-			Gateway:      g.Name,
-			Downstream:   g.DownstreamNames[target],
-			Source:       transport.SourceAddr(ctx),
-			SlaveID:      slaveID,
-			FunctionCode: pdu.FunctionCode,
-			Address:      addr,
-			Quantity:     qty,
-			Duration:     time.Since(start),
-			Err:          err,
-		})
-	}
+	addr, qty := requestRange(pdu)
+	g.Telemetry.Record(telemetry.Event{
+		Time:         start,
+		Gateway:      g.Name,
+		Downstream:   g.DownstreamNames[target],
+		Source:       transport.SourceAddr(ctx),
+		SlaveID:      slaveID,
+		FunctionCode: pdu.FunctionCode,
+		Address:      addr,
+		Quantity:     qty,
+		Duration:     time.Since(start),
+		Err:          err,
+	})
 	return resp, err
 }
 
