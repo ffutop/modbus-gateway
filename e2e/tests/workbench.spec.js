@@ -72,12 +72,14 @@ test('saving writes only the edited value and says a restart is needed', async (
   // The notice survives a reload: it comes from the file differing from what is running.
   await page.reload();
   await expect(page.getByRole('banner')).toContainText('已保存，重启网关后生效');
-  await expect(editor.getByLabel('Slave IDs')).toHaveValue('100'); // plc-sim is selected first
+  await page.getByRole('treeitem', {name:/plc-sim/}).click();
+  await expect(editor.getByLabel('Slave IDs')).toHaveValue('100');
 });
 
 test('live requests appear in the log for the selection, and the inspector shows their rate', async ({ page, gateway, modbusPort }) => {
   const { readHolding } = require('../modbus');
-  await page.goto(gateway.url); // plc-sim (slave 100) is selected first
+  await page.goto(gateway.url);
+  await page.getByRole('treeitem', {name:/plc-sim/}).click();
   const dock = page.getByRole('region', { name: '底部面板' });
   const inspector = page.getByRole('complementary', { name: '检查器' });
 
@@ -124,6 +126,7 @@ test('the topology shows the selected gateway and selecting a node selects it in
   await page.goto(gateway.url);
   const editor = page.getByRole('region', { name: '编辑区' });
 
+  await page.getByRole('treeitem', {name:/plc-sim/}).click();
   await editor.getByRole('tab', { name: /拓扑/ }).click();
   const topo = editor.getByRole('group', { name: '拓扑' });
   for (const name of [`127.0.0.1:${modbusPort}`, 'business', 'plc-sim', 'boiler-sim', 'remote-plc', 'line-a']) {
@@ -159,12 +162,16 @@ test('an edit made in a text editor meanwhile is never overwritten; the console 
   expect(gateway.readConfig()).toBe(external);
 
   await alert.getByRole('button', { name: '重新加载' }).click();
+  await page.getByRole('dialog').getByRole('button', {name:'取消'}).click();
+  await expect(editor.getByLabel('Slave IDs')).toHaveValue('102');
+  await alert.getByRole('button', { name: '重新加载' }).click();
+  await page.getByRole('dialog').getByRole('button', {name:'丢弃并重新加载'}).click();
   await expect(alert).toHaveCount(0);
   await expect(editor.getByLabel('Slave IDs')).toHaveValue('105');
   await expect(page.getByRole('banner')).not.toContainText('未保存修改');
 });
 
-test('a topology shown beside the form follows the draft and flags its conflicts', async ({ page, gateway }) => {
+test('the running topology preserves runtime routes and marks draft conflicts separately', async ({ page, gateway }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto(gateway.url);
   const editor = page.getByRole('region', { name: '编辑区' });
@@ -174,7 +181,7 @@ test('a topology shown beside the form follows the draft and flags its conflicts
 
   const node = editor.getByRole('group', { name: '拓扑' }).getByRole('button', { name: /boiler-sim/ });
   await expect(node).toContainText('冲突');
-  await expect(node).toContainText('ID 100');
+  await expect(node).toContainText('ID 101');
   await expect(editor.getByLabel('Slave IDs')).toBeFocused(); // updating the topology must not steal focus
 });
 

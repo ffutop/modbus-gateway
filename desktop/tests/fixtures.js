@@ -54,6 +54,7 @@ async function launchApp(dir, extraEnv = {}) {
       ...extraEnv,
     },
   });
+  await app.evaluate(({dialog}) => { dialog.showMessageBox = async (_win,opts) => ({response:opts.buttons.findIndex(b => ['重启网关','切换配置','停止并退出'].includes(b))}); });
   return app;
 }
 

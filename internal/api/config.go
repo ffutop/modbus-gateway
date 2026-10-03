@@ -22,11 +22,15 @@ func serveConfig(w http.ResponseWriter, d Deps) {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
+	d.identity.RLock()
+	indexMatches := doc.Revision == d.identity.revision
+	d.identity.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"revision":        doc.Revision,
-		"schema_version":  doc.SchemaVersion,
-		"running_matches": doc.Revision == d.StartupRevision,
-		"config":          tree,
+		"running_index_matches": indexMatches,
+		"revision":              doc.Revision,
+		"schema_version":        doc.SchemaVersion,
+		"running_matches":       doc.Revision == d.StartupRevision,
+		"config":                tree,
 	})
 }
 
@@ -72,6 +76,11 @@ func saveConfig(w http.ResponseWriter, r *http.Request, d Deps) {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
+	d.identity.Lock()
+	if d.identity.revision == doc.Revision {
+		d.identity.revision = config.Revision(content)
+	}
+	d.identity.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"revision": config.Revision(content), "restart_required": true})
 }
 

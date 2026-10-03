@@ -5,7 +5,7 @@
   --canvas:#ffffff; --soft:#f8f9fa; --card:#f5f5f5; --hair:#e5e7eb; --hair-soft:#f0f1f3; --dark:#101010;
   --ok:#16a34a; --ok-bg:#dcfce7; --warn:#b45309; --warn-bg:#fef3c7; --err:#dc2626; --err-bg:#fee2e2; --accent:#3b82f6; --accent-bg:#eff6ff;
   --mono: ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-  --side-w:236px; --insp-w:279px; --dock-h:clamp(180px,32vh,420px); --dock-w:520px;
+  --side-w:236px; --insp-w:279px; --dock-h:clamp(220px,36vh,440px); --dock-w:520px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#d9dbe0}
@@ -126,3 +126,262 @@ tr.bad{background:#fffafa}
 .output{padding:4px 12px;line-height:calc(18px * var(--k));color:var(--muted);white-space:nowrap;overflow:hidden}
 .output div{overflow:hidden;text-overflow:ellipsis}
 #dock-body{display:flex;flex-direction:column}
+/* Keep the workspace stable while making all long content reachable. */
+.side{
+  overflow:hidden
+}
+.tree-content{
+  overflow:auto;
+  flex:1;
+  min-height:0
+}
+.search-label{
+  padding:8px 10px;
+  display:grid;
+  gap:4px;
+  font-size:12px
+}
+.search-label input{
+  width:100%;
+  padding:5px;
+  border:1px solid var(--hair);
+  border-radius:5px
+}
+.collapse{
+  align-self:flex-start;
+  padding-left:8px
+}
+.body,.box,.insp{
+  overflow:auto
+}
+.box{
+  flex-shrink:0
+}
+.grid-box{
+  flex-shrink:1
+}
+.scroll{
+  overflow:auto!important
+}
+.log-controls{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  padding:5px 10px;
+  border-bottom:1px solid var(--hair);
+  flex:none
+}
+.log-controls input:not([type=checkbox]){
+  width:90px;
+  padding:3px
+}
+.log-controls select{
+  max-width:115px
+}
+.tool{
+  height:auto;
+  min-height:43px;
+  flex-wrap:wrap;
+  padding-block:5px
+}
+.tool .file{
+  max-width:240px;
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+.notice{
+  color:var(--warn);
+  font-size:12px
+}
+.status{
+  overflow:hidden
+}
+.output{
+  overflow:auto;
+  user-select:text
+}
+.output div{
+  white-space:pre-wrap;
+  overflow-wrap:anywhere
+}
+.topology-note{
+  position:absolute;
+  bottom:5px;
+  left:8px;
+  font-size:12px;
+  z-index:2;
+  background:var(--soft);
+  padding:3px
+}
+.tn{
+  max-width:100%
+}
+.tcol{
+  top:5px
+}
+.node:focus-visible,button:focus-visible,[data-log-row]:focus-visible,[data-problem]:focus-visible,.reg:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:-2px
+}
+.reg{
+  cursor:pointer
+}
+dialog{
+  margin:auto;
+  max-width:min(720px,90vw);
+  max-height:85vh;
+  padding:24px;
+  border:1px solid var(--hair);
+  border-radius:10px;
+  color:var(--body);
+  box-shadow:0 12px 50px #0003
+}
+dialog::backdrop{
+  background:#0005
+}
+dialog h2{
+  font-size:18px;
+  margin-bottom:12px
+}
+dialog p{
+  margin-bottom:16px
+}
+dialog pre{
+  white-space:pre-wrap;
+  overflow:auto;
+  max-height:55vh;
+  user-select:text;
+  overflow-wrap:anywhere
+}
+.dialog-actions{
+  display:flex;
+  gap:8px;
+  justify-content:flex-end;
+  margin-top:18px
+}
+.tabs .hint{
+  display:none
+}
+
+.resize-side{
+  position:absolute;
+  left:var(--side-w);
+  top:0;
+  bottom:0;
+  width:5px;
+  cursor:col-resize;
+  z-index:3
+}
+.resize-dock{
+  position:absolute;
+  left:var(--side-w);
+  right:0;
+  bottom:var(--dock-h);
+  height:5px;
+  cursor:row-resize;
+  z-index:3
+}
+.layout-actions{
+  display:flex;
+  gap:8px;
+  padding:4px 10px;
+  background:var(--soft);
+  font-size:12px
+}
+.hide-inspector .main{
+  grid-template-columns:var(--side-w) minmax(0,1fr);
+  grid-template-areas:"side center" "side dock"
+}
+.hide-inspector .insp{
+  display:none
+}
+.maximize .main{
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:1fr;
+  grid-template-areas:"center"
+}
+.maximize .side,.maximize .insp,.maximize .dock,.maximize .resize-side,.maximize .resize-dock{
+  display:none
+}
+
+#app.compact{
+  min-width:0;
+  min-height:0
+}
+.compact .main{
+  grid-template-columns:190px minmax(0,1fr);
+  grid-template-areas:"side center" "side dock"
+}
+.compact .insp{
+  display:none
+}
+.compact .status{
+  white-space:normal;
+  height:auto;
+  min-height:27px
+}
+.compact .h{
+  flex-wrap:wrap
+}
+.compact .cols{
+  grid-template-columns:minmax(0,1fr)
+}
+.compact .regbar .seg{
+  flex-wrap:wrap;
+  border-radius:5px
+}
+.compact .panes{
+  grid-template-columns:minmax(0,1fr)
+}
+.compact .pane+.pane{
+  display:none
+}
+body.compact-mode #tiny{
+  display:none
+}
+#tiny .btn{
+  color:var(--ink)
+}
+
+@media(min-width:2560px){
+  .resize-dock{
+  display:none
+}
+.hide-inspector .main{
+  grid-template-columns:var(--side-w) minmax(0,1fr) var(--dock-w);
+  grid-template-areas:"side center dock"
+}
+.maximize .main{
+  grid-template-columns:1fr;
+  grid-template-areas:"center"
+}
+
+}
+
+@media(prefers-reduced-motion:reduce){
+  .flow{
+  animation:none
+}
+.reg{
+  transition:none
+}
+
+}
+
+
+.topo{
+  overflow:auto
+}
+.body,.box,.insp{
+  overflow-x:hidden
+}
+.field select[aria-invalid=true]{
+  border-color:var(--err)
+}
+.field select:disabled{
+  opacity:.6
+}
+
+.compact .resize-side{display:none}
+.compact .resize-dock{left:190px}

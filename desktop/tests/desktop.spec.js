@@ -17,7 +17,7 @@ test('the gateway port only serves the window: other local clients get 401', asy
     expect(res.status, `GET ${path} from outside the window`).toBe(401);
   }
   // Inside the window the same API works (the console loaded its metrics).
-  await expect(window.getByRole('complementary', { name: '检查器' }).getByLabel('累计请求')).toHaveText('0');
+  expect(await window.evaluate(async () => (await fetch('/api/v1/metrics')).status)).toBe(200);
 });
 
 test('the window cannot shrink below 1280x720 and shows the gateway output', async ({ app, window }) => {
@@ -177,6 +177,7 @@ test('first run creates a sample config; File > Open switches config and is reme
   const other = path.join(dir, 'line-a.yaml');
   fs.writeFileSync(other, sampleConfig(modbusPort));
   await app.evaluate(({ dialog, Menu }, file) => {
+    dialog.showMessageBox = async (_win,opts) => ({response:opts.buttons.indexOf('切换配置')});
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
     Menu.getApplicationMenu().getMenuItemById('open-config').click();
   }, other);
@@ -194,6 +195,7 @@ test('first run creates a sample config; File > Open switches config and is reme
 
 test('View > Details / Topology (Cmd/Ctrl+1/2) switch the editor', async ({ app, window }) => {
   const editor = window.getByRole('region', { name: '编辑区' });
+  await window.getByRole('treeitem', {name:/plc-sim/}).click({timeout:10000});
   await expect(editor.getByLabel('Slave IDs')).toBeVisible({ timeout: 10_000 });
   const clickView = (label) => app.evaluate(({ Menu }, label) => {
     const view = Menu.getApplicationMenu().items.find((i) => i.label === '视图');
@@ -211,7 +213,7 @@ test('the page has no Node access, cannot navigate away, and opens external link
   const consoleUrl = window.url();
 
   expect(await window.evaluate(() => [typeof require, typeof process, Object.keys(window.modmuxDesktop).sort().join(',')]))
-    .toEqual(['undefined', 'undefined', 'getOutput,onOutput,onView,restartGateway']);
+    .toEqual(['undefined', 'undefined', 'getDraft,getOutput,guardResult,onGuard,onOutput,onPhase,onView,openConfig,restartGateway,setDirty']);
 
   // Stub the system browser so the test never opens a real one.
   await app.evaluate(({ shell }) => { globalThis.opened = []; shell.openExternal = async (u) => { globalThis.opened.push(u); }; });
@@ -239,4 +241,58 @@ test('the local error page cannot navigate to other local files', async ({ windo
   await window.evaluate(() => { location.href = 'file:///etc/passwd'; });
   await window.waitForTimeout(300);
   expect(window.url()).toBe(stoppedUrl);
+});
+
+test('restart protects unsaved changes: cancel preserves the draft, save applies it', async ({window,modbusPort}) => {
+  const {readHolding} = require('../../e2e/modbus');
+  await window.getByRole('treeitem',{name:/plc-sim/}).click({timeout:10000});
+  await window.getByLabel('Slave IDs').fill('110');
+  await window.getByRole('button',{name:'重启网关'}).click();
+  await window.getByRole('dialog').getByRole('button',{name:'取消'}).click();
+  await expect(window.getByLabel('Slave IDs')).toHaveValue('110');
+  await expect(readHolding(modbusPort,100,0,1)).resolves.toEqual([0]);
+  await window.getByRole('button',{name:'重启网关'}).click();
+  await window.getByRole('dialog').getByRole('button',{name:'保存并继续'}).click();
+  await expect(window.getByRole('banner')).toContainText('配置与运行中一致',{timeout:10000});
+  await expect(readHolding(modbusPort,110,0,1)).resolves.toEqual([0]);
+});
+
+test('invalid drafts block restart and stay available for repair',async ({window,modbusPort}) => {
+  await window.getByRole('treeitem',{name:/plc-sim/}).click({timeout:10000});
+  await window.getByLabel('Slave IDs').fill('999');
+  await window.getByRole('button',{name:'重启网关'}).click();
+  await window.getByRole('dialog').getByRole('button',{name:'保存并继续'}).click();
+  await expect(window.getByLabel('Slave IDs')).toHaveValue('999');
+  await expect(window.getByRole('banner')).toContainText('未保存修改');
+  await expect.poll(() => portOpen(modbusPort)).toBe(true);
+  await window.getByRole('button',{name:'放弃修改',exact:true}).click();
+  await window.getByRole('dialog').getByRole('button',{name:'放弃修改'}).click();
+});
+
+test('native restart confirmation can cancel an interruption',async ({app,window,modbusPort}) => {
+  await expect(window.getByRole('tree',{name:'资源'})).toBeVisible({timeout:10000});
+  const url = window.url();
+  await answerCloseDialog(app,'取消');
+  await window.getByRole('button',{name:'重启网关'}).click();
+  await window.waitForTimeout(200);
+  expect(window.url()).toBe(url);
+  expect(await portOpen(modbusPort)).toBe(true);
+});
+
+test('a gateway crash preserves the draft across restarting the stopped page',async ({app,window,configPath}) => {
+  const {execFileSync} = require('node:child_process');
+  await window.getByRole('treeitem',{name:/plc-sim/}).click({timeout:10000});
+  await window.getByLabel('Slave IDs').fill('110');
+  await expect(window.getByRole('banner')).toContainText('未保存修改');
+  execFileSync('pkill',['-KILL','-f',configPath]);
+  await expect(window.getByRole('heading',{name:'网关已停止'})).toBeVisible();
+  await expect(window.getByText(/未保存草稿已保留/)).toBeVisible();
+  await answerCloseDialog(app,'保留草稿并继续');
+  await window.getByRole('button',{name:'重新启动'}).click();
+  await expect(window.getByRole('banner')).toContainText('未保存修改',{timeout:10000});
+  await window.getByRole('treeitem',{name:/plc-sim/}).click();
+  await expect(window.getByLabel('Slave IDs')).toHaveValue('110');
+  expect(fs.readFileSync(configPath,'utf8')).toContain('slave_ids: "100"');
+  await window.getByRole('button',{name:'放弃修改',exact:true}).click();
+  await window.getByRole('dialog').getByRole('button',{name:'放弃修改'}).click();
 });

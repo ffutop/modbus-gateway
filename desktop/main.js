@@ -32,6 +32,34 @@ let win = null;
 let quitting = false; // set once the user confirmed and the gateway stopped
 let configFiles = null; // created once the app (and its paths) are ready
 let currentConfig = null;
+let dirty = false;
+let recoveryDraft = null;
+let transitioning = false;
+let guardId = 0;
+const guards = new Map();
+ipcMain.on('config:dirty', (event, value, draft) => { if (event.sender === win?.webContents) { dirty = !!value; recoveryDraft = dirty ? draft : null; } });
+ipcMain.handle('config:draft', () => recoveryDraft);
+ipcMain.on('config:guard-result', (event, id, allowed) => { if (event.sender === win?.webContents) guards.get(id)?.(allowed); });
+ipcMain.handle('config:open', () => chooseConfig());
+
+async function guardEdits(action = 'continue') {
+  if (!dirty) return true;
+  if (!win || win.isDestroyed()) return false;
+  if (win.webContents.getURL().startsWith('file:')) {
+    const buttons = action !== 'continue' ? ['放弃修改','取消'] : ['保留草稿并继续','放弃修改','取消'];
+    const {response} = await dialog.showMessageBox(win,{type:'question',buttons,defaultId:buttons.length-1,cancelId:buttons.length-1,message:'存在未保存草稿',detail: action === 'quit' ? '退出应用会丢弃草稿。可先在故障页复制诊断信息。' : '网关停止前的草稿已暂存，重新启动后可以继续编辑。'});
+    if (buttons[response] === '放弃修改') { dirty = false; recoveryDraft = null; return true; }
+    return buttons[response] === '保留草稿并继续';
+  }
+  const id = ++guardId;
+  return new Promise(resolve => {
+    const timer = setTimeout(() => finish(false), 120000);
+    const finish = allowed => { clearTimeout(timer); guards.delete(id); resolve(allowed); };
+    guards.set(id, finish); win.webContents.send('config:guard', id);
+  });
+}
+
+function phase(text) { if (win && !win.isDestroyed()) win.webContents.send('gateway:phase', text); }
 
 ipcMain.handle('gateway:output', () => gateway.output);
 ipcMain.handle('gateway:restart', () => restartGateway());
@@ -94,7 +122,7 @@ async function createWindow() {
 
   win.on('close', (event) => {
     if (quitting) return;
-    if (!gateway.running) { // nothing to stop, nothing to confirm
+    if (!gateway.running && !dirty) { // nothing to stop, nothing to confirm
       quitting = true;
       app.quit();
       return;
@@ -108,17 +136,32 @@ async function createWindow() {
 // restartGateway stops the gateway gracefully and starts it again on the
 // current config, e.g. to apply a saved change.
 async function restartGateway() {
-  await gateway.stop();
-  await openConsole();
+  if (transitioning) return;
+  transitioning = true;
+  try {
+    if (!await guardEdits()) return;
+    if (gateway.running) {
+      const {response} = await dialog.showMessageBox(win, {type:'question', buttons:['重启网关','取消'], defaultId:1, cancelId:1, message:'重启将短暂中断 Modbus 转发', detail:'将停止当前进程，并使用磁盘上已保存的配置重新启动。'});
+      if (response !== 0) return;
+    }
+    phase('正在停止网关…'); await gateway.stop(); dirty = false;
+    phase('正在启动网关…'); await openConsole();
+  } finally { transitioning = false; }
 }
 
-// openConfig switches the running gateway to another config file.
 async function openConfig(file) {
-  currentConfig = file;
-  configFiles.remember(file);
-  buildMenu();
-  await gateway.stop();
-  await openConsole();
+  if (transitioning) return;
+  transitioning = true;
+  try {
+    if (!await guardEdits('switch')) return;
+    if (gateway.running) {
+      const {response} = await dialog.showMessageBox(win, {type:'question', buttons:['切换配置','取消'], defaultId:1, cancelId:1, message:'切换配置将中断当前 Modbus 转发', detail:file});
+      if (response !== 0) return;
+    }
+    phase('正在停止网关…'); await gateway.stop();
+    currentConfig = file; dirty = false; configFiles.remember(file); buildMenu();
+    phase('正在启动网关…'); await openConsole();
+  } finally { transitioning = false; }
 }
 
 async function chooseConfig() {
@@ -153,7 +196,7 @@ function buildMenu() {
         { label: '详情', accelerator: 'CmdOrCtrl+1', click: () => win?.webContents.send('view', 'detail') },
         { label: '拓扑', accelerator: 'CmdOrCtrl+2', click: () => win?.webContents.send('view', 'topo') },
         { type: 'separator' },
-        { role: 'reload', label: '重新载入' },
+        { label: '重新载入', accelerator: 'CmdOrCtrl+R', click: async () => { if (!transitioning && await guardEdits()) { dirty = false; win.webContents.reload(); } } },
         { role: 'togglefullscreen', label: '全屏' },
       ],
     },
@@ -165,7 +208,8 @@ function buildMenu() {
 // with a local page explaining why, the last output, and a restart button.
 function showStopped({ title, reason }) {
   if (!win || win.isDestroyed()) return;
-  const data = JSON.stringify({ title, reason, output: gateway.output.slice(-40) });
+  dirty = !!recoveryDraft;
+  const data = JSON.stringify({ title, reason, output: gateway.output.slice(-40), configPath: currentConfig, hasDraft: !!recoveryDraft, draft: recoveryDraft?.edits });
   win.loadFile(path.join(__dirname, 'stopped.html'), { query: { data } });
 }
 
@@ -175,6 +219,8 @@ let confirming = false;
 async function confirmQuit() {
   if (confirming) return;
   confirming = true;
+  if (transitioning || !await guardEdits('quit')) { confirming = false; return; }
+  if (!gateway.running) { quitting = true; confirming = false; app.quit(); return; }
   const buttons = ['停止并退出', '取消'];
   const { response } = await dialog.showMessageBox(win, {
     type: 'question',
@@ -202,6 +248,7 @@ async function openConsole() {
     return;
   }
   withToken(url);
+  dirty = !!recoveryDraft;
   await win.loadURL(`${url}/`);
 }
 
@@ -214,7 +261,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', (event) => {
-  if (quitting || !win || win.isDestroyed() || !gateway.running) return;
+  if (quitting || !win || win.isDestroyed() || !gateway.running && !dirty) return;
   event.preventDefault();
   confirmQuit();
 });

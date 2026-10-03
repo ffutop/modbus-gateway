@@ -14,7 +14,7 @@ async function overflow(page) {
       if (r.width && (r.bottom > innerHeight + 1 || r.right > innerWidth + 1)) out.push(`outside: ${el.className || el.tagName}`);
     }
     for (const el of document.querySelectorAll('.side,.insp,.body,.box,.tool,.dock-tabs,.regbar')) {
-      if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) out.push(`clipped: ${el.className}`);
+      if ((el.scrollHeight > el.clientHeight + 2 && !['auto','scroll'].includes(getComputedStyle(el).overflowY)) || el.scrollWidth > el.clientWidth + 2) out.push(`clipped: ${el.className}`);
     }
     return [...new Set(out)];
   });
@@ -25,6 +25,8 @@ for (const [width, height] of [[1280, 720], [1366, 768], [1600, 900], [1920, 108
     await page.setViewportSize({ width, height });
     await page.goto(gateway.url);
     const tree = page.getByRole('tree', { name: '资源' });
+    await expect(tree.getByRole('treeitem', { name: /business/ })).toHaveAttribute('aria-selected','true');
+    await tree.getByRole('treeitem', { name: /plc-sim/ }).click();
     await expect(tree.getByRole('treeitem', { name: /plc-sim/ })).toHaveAttribute('aria-selected', 'true');
     expect(await overflow(page), 'downstream view').toEqual([]);
 

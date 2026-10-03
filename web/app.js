@@ -9,6 +9,8 @@ const desktop = window.modmuxDesktop ?? null;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
+  running: null,
+  saving: false, notice: "", paused: false, frozenLog: [], errorsOnly: false, logScope: "selected", slaveFilter: "", fcFilter: "", addressBase: 16, search: "", collapsed: new Set(), topoGW: null,
   config: null, // GET /api/v1/config response; config is the file as saved
   sel: null, // {kind: 'gw'|'ds'|'sim', gw, ds, sim} indexes into the config tree
   edits: new Map(), // pathKey -> {op:'set', path, value}: unsaved changes
@@ -77,32 +79,64 @@ const sameSel = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // selKey names the telemetry series of the selection: "gateway" or
 // "gateway/downstream"; null when the selection has no series.
-function selKey() {
+function runningSelection() {
   const s = state.sel;
   if (!s || s.kind === 'sim') return null;
+  if (state.config.running_index_matches) return s;
   const gw = cfg().gateways[s.gw];
+  const gi = state.running.gateways.findIndex(g => g.name === gw?.name);
+  if (gi < 0) return null;
+  if (s.kind === 'gw') return {kind:'gw',gw:gi};
+  const di = state.running.gateways[gi].downstreams.findIndex(d => d.name === gw.downstreams[s.ds]?.name);
+  return di < 0 ? null : {kind:'ds',gw:gi,ds:di};
+}
+
+function selKey() {
+  if (!state.sel || state.sel.kind === 'sim') return null;
+  const s = runningSelection();
+  if (!s) return '__unmatched__';
+  const gw = state.running.gateways[s.gw];
   return s.kind === 'ds' ? `${gw.name}/${gw.downstreams[s.ds].name}` : gw.name;
+}
+
+function configSelection(runtimeSel) {
+  if (state.config.running_index_matches) return runtimeSel;
+  if (runtimeSel.kind === 'sim') return cfg().simulations?.[runtimeSel.sim] ? runtimeSel : null;
+  const gw = state.running.gateways[runtimeSel.gw];
+  const gi = cfg().gateways.findIndex(g => g.name === gw.name);
+  if (gi < 0) return null;
+  if (runtimeSel.kind === 'gw') return {kind:'gw',gw:gi};
+  const di = cfg().gateways[gi].downstreams.findIndex(d => d.name === gw.downstreams[runtimeSel.ds].name);
+  return di < 0 ? null : {kind:'ds',gw:gi,ds:di};
 }
 
 function renderTree() {
   const item = (label, depth, sel, right = '', invalid = false) =>
-    `<div class="node" role="treeitem" aria-level="${depth + 1}" aria-selected="${sameSel(sel, state.sel)}"${invalid ? ' aria-invalid="true"' : ''} style="--d:${depth}" data-sel='${JSON.stringify(sel)}'>${label}<span class="r">${right}</span></div>`;
-  let h = '<div class="sec">网关</div>';
+    `<div class="node" role="treeitem" tabindex="0" aria-level="${depth + 1}" aria-selected="${sameSel(sel, state.sel)}"${invalid ? ' aria-invalid="true"' : ''} style="--d:${depth}" data-sel='${JSON.stringify(sel)}'>${label}<span class="r">${right}</span></div>`;
+  const scrollTop = $('#side .tree-content')?.scrollTop || 0;
+  let h = '<label class="search-label">搜索资源<input id="resource-search" placeholder="名称 / Slave ID" value="' + esc(state.search) + '"></label><div class="tree-content" role="tree" aria-label="资源"><div class="sec">网关</div>';
   (cfg().gateways || []).forEach((gw, gi) => {
-    h += item(`<b>${esc(gw.name)}</b>`, 0, { kind: 'gw', gw: gi });
-    (gw.downstreams || []).forEach((ds, di) => {
+    if (state.search && !JSON.stringify(gw).toLowerCase().includes(state.search.toLowerCase())) return;
+    h += item(`<button class="collapse" data-collapse="${gi}" aria-expanded="${!state.collapsed.has(gi)}" aria-label="折叠或展开 ${esc(gw.name)}">${state.collapsed.has(gi) ? '▸' : '▾'}</button><b>${esc(gw.name)}</b>`, 0, { kind: 'gw', gw: gi });
+    if (!state.collapsed.has(gi)) (gw.downstreams || []).forEach((ds, di) => {
+      if (state.search && !gw.name.toLowerCase().includes(state.search.toLowerCase()) && !JSON.stringify(ds).toLowerCase().includes(state.search.toLowerCase())) return;
       const bad = problemsUnder(['gateways', gi, 'downstreams', di]).length > 0;
-      h += item(`<span class="muted">→</span> ${esc(ds.name)}`, 1, { kind: 'ds', gw: gi, ds: di },
+      h += item(`<span class="muted">→</span> ${esc(ds.name || `${ds.type}#${di}`)}`, 1, { kind: 'ds', gw: gi, ds: di },
         bad ? '<span class="err-txt" title="有校验错误">●</span>' : `<span class="faint mono">${esc(ds.slave_ids)}</span>`, bad);
     });
   });
   h += '<div class="sec">模拟从站</div>';
   (cfg().simulations || []).forEach((sim, si) => {
+    if (state.search && !sim.name.toLowerCase().includes(state.search.toLowerCase())) return;
     h += item(esc(sim.name), 0, { kind: 'sim', sim: si }, `<span class="faint">${esc(sim.persistence?.type)}</span>`);
   });
-  $('#side').innerHTML = h;
+  $('#side').innerHTML = h + '</div>';
+  $('#side .tree-content').scrollTop = scrollTop;
+  $('#resource-search').oninput = (e) => { state.search = e.target.value; const cursor = e.target.selectionStart; renderTree(); $('#resource-search').focus(); $('#resource-search').setSelectionRange(cursor,cursor); };
+  for (const b of document.querySelectorAll('[data-collapse]')) b.onclick = (e) => { e.stopPropagation(); const i = Number(b.dataset.collapse); state.collapsed.has(i) ? state.collapsed.delete(i) : state.collapsed.add(i); renderTree(); };
   for (const n of document.querySelectorAll('#side [data-sel]')) {
     n.onclick = () => select(JSON.parse(n.dataset.sel));
+    n.onkeydown = (e) => { if (e.target !== n) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); n.click(); } };
   }
 }
 
@@ -111,6 +145,7 @@ let fieldSeq = 0;
 // edit at that path in the config file.
 function field(label, value, path) {
   const id = `f${++fieldSeq}`;
+  path = state.config.schema_version === 1 && path && getIn(state.config.config, path) !== undefined ? path : null;
   const bind = path ? `data-path='${JSON.stringify(path)}'` : 'readonly';
   return `<div class="field"><label for="${id}">${label}</label><input id="${id}" value="${esc(value)}" ${bind}></div>` +
     (path ? `<div class="field-err" data-err-for='${JSON.stringify(path)}'></div>` : '');
@@ -124,15 +159,16 @@ function renderEditor() {
     const ds = gw.downstreams[s.ds];
     const p = (...rest) => ['gateways', s.gw, 'downstreams', s.ds, ...rest];
     const target = ds.simulation
-      ? field('模拟从站', ds.simulation.ref, p('simulation', 'ref'))
+      ? simulationField(ds.simulation.ref, p('simulation', 'ref'))
       : ds.tcp ? field('目标地址', ds.tcp.address, p('tcp', 'address'))
       : ds.serial ? field('串口', ds.serial.device, p('serial', 'device')) : '';
-    h = `<div class="h"><h2>${esc(ds.name)}</h2><span class="badge">${esc(ds.type)}</span><span class="muted">属于网关 ${esc(gw.name)}</span></div>
+    h = `<div class="h"><h2>${esc(ds.name || `${ds.type}#${s.ds}`)}</h2><span class="badge">${esc(ds.type)}</span><span class="muted">属于网关 ${esc(gw.name)}</span></div>
       <div class="cols"><div class="box"><h4>属性</h4>
-        ${field('名称', ds.name, p('name'))}${field('类型', ds.type)}${field('Slave IDs', ds.slave_ids, p('slave_ids'))}${target}
-      </div></div>`;
+        ${field('名称', ds.name, p('name'))}${field('类型', ds.type)}${field('Slave IDs', ds.slave_ids, p('slave_ids'))}${target}${ds.serial ? Object.entries(ds.serial).filter(([k]) => k !== 'device').map(([k,v]) => field(({baud_rate:'波特率',data_bits:'数据位',parity:'校验位',stop_bits:'停止位',timeout:'超时',rqst_pause:'请求间隔'})[k] || k, v, p('serial', k))).join('') : ''}
+      <div class="small">支持修改已有字段；新增字段、增删对象请编辑 YAML。</div></div></div>${ds.simulation?.mappings ? `<div class="box"><h4>注入映射</h4>${ds.simulation.mappings.map((m) => `<div class="mono">${esc(m.source.table)} @${m.source.start_address} ×${m.source.count} → ${esc(m.target.table)} @${m.target.start_address}</div>`).join('')}</div>` : ''}`;
   } else if (s?.kind === 'gw') {
-    h = `<div class="h"><h2>${esc(cfg().gateways[s.gw].name)}</h2></div>`;
+    const gw = cfg().gateways[s.gw];
+    h = `<div class="h"><h2>${esc(gw.name)}</h2><span class="badge">配置详情</span></div><div class="box"><h4>上游监听配置（非监听健康状态）</h4>${(gw.upstreams || []).map((u) => field('协议', u.type) + field('监听地址 / 串口', u.tcp?.address || u.serial?.device)).join('')}</div><div class="box"><h4>Slave ID 路由表</h4><table class="t"><thead><tr><th>Slave IDs</th><th>下游</th><th>类型</th><th>目标</th></tr></thead><tbody>${(gw.downstreams || []).map((d, i) => `<tr><td>${esc(d.slave_ids)}</td><td><button data-route="${i}">${esc(d.name || d.type)}</button></td><td>${esc(d.type)}</td><td>${esc(d.simulation?.ref || d.tcp?.address || d.serial?.device)}</td></tr>`).join('')}</tbody></table></div>`;
   } else if (s?.kind === 'sim') {
     const sim = cfg().simulations[s.sim];
     const r = state.reg;
@@ -142,12 +178,13 @@ function renderEditor() {
         <div class="seg">${TABLES.map(([t, l]) => `<button aria-pressed="${t === r.table}" data-table="${t}">${l}</button>`).join('')}</div>
         <span class="sp"></span>
         <button class="btn" data-step="-1" aria-label="上一屏">‹</button>
-        <label class="muted" for="jump">起始地址 0x</label><input id="jump" class="mono jump" value="${hex(r.start, 4)}">
+        <label class="muted" for="jump">起始地址 ${state.addressBase === 16 ? '0x' : '十进制'}</label><input id="jump" class="mono jump" value="${state.addressBase === 16 ? hex(r.start, 4) : r.start}"><button class="btn" id="address-base">${state.addressBase === 16 ? '切换十进制' : '切换十六进制'}</button>
         <button class="btn" data-step="1" aria-label="下一屏">›</button>
         <span class="muted mono" id="reg-range"></span>
       </div>
-      <div class="box grid-box"><div id="grid" role="grid" aria-label="寄存器"></div></div>`;
+      <div class="small">协议地址从 0 开始；4x / 3x 是表类型，0 对应常用引用编号 40001 / 30001。<span id="reg-error" role="alert"></span></div><div class="box grid-box"><div id="grid" role="grid" aria-label="寄存器"></div></div>`;
   }
+  h += `<div class="small">${state.edits.size || !state.config.running_matches ? '配置草稿 / 磁盘配置 · 运行中仍使用启动配置' : ''}</div>`;
   const split = isWide();
   const showDetail = split || state.view === 'detail';
   const showTopo = split || state.view === 'topo';
@@ -163,7 +200,9 @@ function renderEditor() {
     t.onclick = () => { state.view = t.dataset.view; renderEditor(); };
   }
   if (showTopo) renderTopology();
-  for (const input of document.querySelectorAll('#center input[data-path]')) {
+  for (const b of document.querySelectorAll('[data-route]')) b.onclick = () => select({kind:'ds',gw:s.gw,ds:Number(b.dataset.route)});
+  if ($('#address-base')) $('#address-base').onclick = () => { state.addressBase = state.addressBase === 16 ? 10 : 16; renderEditor(); };
+  for (const input of document.querySelectorAll('#center [data-path]')) {
     input.oninput = () => setEdit(JSON.parse(input.dataset.path), input.value);
   }
   for (const b of document.querySelectorAll('#center [data-table]')) {
@@ -173,7 +212,7 @@ function renderEditor() {
     b.onclick = () => moveRegisters(state.reg.start + Number(b.dataset.step) * state.reg.page);
   }
   const jump = $('#jump');
-  if (jump) jump.onkeydown = (e) => { if (e.key === 'Enter') moveRegisters(parseInt(jump.value, 16) || 0); };
+  if (jump) jump.onkeydown = (e) => { if (e.key === 'Enter') { const text = jump.value.trim(); const valid = state.addressBase === 16 ? /^[0-9a-f]{1,4}$/i.test(text) : /^\d+$/.test(text); const n = parseInt(text, state.addressBase); if (!valid || n > 65535) { $('#reg-error').textContent = '请输入 0–65535 范围内的有效地址'; jump.setAttribute('aria-invalid','true'); } else { $('#reg-error').textContent = ''; jump.removeAttribute('aria-invalid'); moveRegisters(n); } } };
   showFieldProblems();
   if (s?.kind === 'sim') { showSimStatus(); refreshRegisters(); }
 }
@@ -185,33 +224,36 @@ function selTitle() {
   if (!s) return '';
   if (s.kind === 'sim') return cfg().simulations[s.sim].name;
   const gw = cfg().gateways[s.gw];
-  return s.kind === 'ds' ? gw.downstreams[s.ds].name : gw.name;
+  return s.kind === 'ds' ? gw.downstreams[s.ds].name || `${gw.downstreams[s.ds].type}#${s.ds}` : gw.name;
 }
 
 // topoGatewayIndex picks the gateway the topology shows: the selection's
 // own, or for a simulation the first gateway with a downstream bound to it.
 function topoGatewayIndex() {
-  const s = state.sel, c = cfg(), gws = c.gateways || [];
+  const s = state.sel, c = state.running, gws = c.gateways || [];
   if (!s) return 0;
-  if (s.kind !== 'sim') return s.gw;
-  const name = c.simulations[s.sim].name;
-  return Math.max(0, gws.findIndex((g) => (g.downstreams || []).some((d) => d.simulation?.ref === name)));
+  if (s.kind !== 'sim') return runningSelection()?.gw ?? -1;
+  const name = cfg().simulations[s.sim]?.name;
+  const refs = gws.map((g,i) => (g.downstreams || []).some((d) => d.simulation?.ref === name) ? i : -1).filter(i => i >= 0);
+  return refs.includes(state.topoGW) ? state.topoGW : (refs[0] ?? -1);
 }
-const topoGateway = () => cfg().gateways?.[topoGatewayIndex()];
+const topoGateway = () => state.running.gateways?.[topoGatewayIndex()];
 
 function renderTopology() {
   const el = $('#topo');
   const gi = topoGatewayIndex();
-  const gw = cfg().gateways?.[gi];
-  if (!el || !gw) return;
-  const W = el.clientWidth, H = el.clientHeight;
+  const gw = state.running.gateways?.[gi];
+  if (!el) return;
+  if (!gw) { el.innerHTML = '<div class="pad muted">选中对象未匹配到运行中的网关或引用</div>'; return; }
   const sims = [...new Set((gw.downstreams || []).map((d) => d.simulation?.ref).filter(Boolean))];
+  const W = Math.max(el.clientWidth, sims.length ? 600 : 460);
+  const H = Math.max(el.clientHeight, 100 + Math.max(gw.upstreams.length,gw.downstreams.length,sims.length) * 90);
   const nw = Math.max(132, Math.min(200, W / (sims.length ? 5.2 : 4.2)));
   const cx = (sims.length ? [0.13, 0.37, 0.63, 0.87] : [0.17, 0.5, 0.83]).map((c) => W * c);
   const ys = (n, i) => H / 2 + 8 + (i - (n - 1) / 2) * Math.min((H - 40) / (n + 1), 130);
   const simIndex = (name) => cfg().simulations.findIndex((x) => x.name === name);
   const nodes = [];
-  (gw.upstreams || []).forEach((u, i) => nodes.push({ id: `up${i}`, sel: { kind: 'gw', gw: gi }, x: cx[0], y: ys(gw.upstreams.length, i), k: `上游 · ${u.type}`, n: u.tcp?.address ?? u.serial?.device ?? '' }));
+  (gw.upstreams || []).forEach((u, i) => nodes.push({ id: `up${i}`, sel: { kind: 'gw', gw: gi }, x: cx[0], y: ys(gw.upstreams.length, i), k: `上游 · ${u.type}`, n: u.type === 'rtu' ? u.serial?.device ?? '' : u.tcp?.address ?? '' }));
   nodes.push({ id: 'gw', dark: true, live: gw.name, sel: { kind: 'gw', gw: gi }, x: cx[1], y: ys(1, 0), k: '网关', n: gw.name });
   (gw.downstreams || []).forEach((d, i) => nodes.push({
     id: `ds${i}`, live: `${gw.name}/${d.name}`, sel: { kind: 'ds', gw: gi, ds: i }, x: cx[2], y: ys(gw.downstreams.length, i),
@@ -225,41 +267,43 @@ function renderTopology() {
     edges.push(['gw', `ds${i}`, `${gw.name}/${d.name}`]);
     if (d.simulation?.ref) edges.push([`ds${i}`, `sim:${d.simulation.ref}`, `${gw.name}/${d.name}`, d.type === 'injector']);
   });
-  const on = nodes.find((n) => sameSel(n.sel, state.sel) && !n.id.startsWith('up'))?.id;
+  const on = nodes.find((n) => sameSel(configSelection(n.sel), state.sel) && !n.id.startsWith('up'))?.id;
   const half = nw / 2;
   const curve = (a, b) => { const mx = (a.x + b.x) / 2; return `M${a.x + half},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x - half},${b.y}`; };
   el.style.setProperty('--nw', `${nw}px`);
-  el.innerHTML = `<svg aria-hidden="true">${edges.map(([a, b, key, inj]) => {
+  el.innerHTML = `<div class="topology-note">运行拓扑 · 蓝色虚线：注入写入 ${state.sel?.kind === 'sim' ? `<select id="topology-gateway" aria-label="引用网关">${state.running.gateways.map((g,i) => (g.downstreams || []).some(d => d.simulation?.ref === cfg().simulations[state.sel.sim].name) ? `<option value="${i}" ${gi === i ? 'selected' : ''}>${esc(g.name)}</option>` : '').join('')}</select>` : ''}</div><svg aria-hidden="true" style="width:${W}px;height:${H}px">${edges.map(([a, b, key, inj]) => {
       const hi = on && (a === on || b === on);
       return `<path d="${curve(at[a], at[b])}" fill="none" stroke="${hi ? '#a1a1aa' : '#d4d4d8'}" stroke-width="${hi ? 3 : 2}"/>
         <path d="${curve(at[a], at[b])}" fill="none" stroke="${inj ? '#3b82f6' : '#111'}" stroke-width="1.5" stroke-dasharray="4 6" class="flow" data-edge="${esc(key)}" style="opacity:${on && !hi ? 0.3 : 0.85}"/>
-        <text x="${(at[a].x + at[b].x) / 2}" y="${(at[a].y + at[b].y) / 2 - 6}" text-anchor="middle" class="edge-label" ${inj ? '' : `data-edge-label="${esc(key)}"`}>${inj ? '写入映射' : ''}</text>`;
+        <text x="${(at[a].x + at[b].x) / 2}" y="${(at[a].y + at[b].y) / 2 - 6}" text-anchor="middle" class="edge-label" ${inj ? '' : `data-edge-label="${esc(key)}"`}>${inj ? '注入写入' : ''}</text>`;
     }).join('')}</svg>
     ${(sims.length ? ['上游', '网关', '下游', '模拟从站'] : ['上游', '网关', '下游']).map((l, i) => `<div class="tcol" style="left:${cx[i]}px">${l}</div>`).join('')}
-    ${nodes.map((n) => `<button class="tn${n.dark ? ' gw' : ''}" aria-pressed="${n.id === on}" data-sel='${JSON.stringify(n.sel)}' style="left:${n.x}px;top:${n.y}px">
-      <span class="k"><span>${esc(n.k)}</span>${n.bad ? '<span class="err-txt">● 冲突</span>' : ''}</span>
+    ${nodes.map((n) => `<button class="tn${n.dark ? ' gw' : ''}" aria-pressed="${n.id === on}" data-sel='${JSON.stringify(configSelection(n.sel))}' ${configSelection(n.sel) ? '' : 'disabled'} style="left:${n.x}px;top:${n.y}px">
+      <span class="k"><span>${esc(n.k)}</span>${n.bad ? '<span class="err-txt" title="配置草稿有冲突，运行配置未改变">● 草稿冲突</span>' : ''}</span>
       <span class="n">${esc(n.n)}</span><span class="s"${n.live ? ` data-node-live="${esc(n.live)}"` : ''}></span></button>`).join('')}`;
   for (const b of el.querySelectorAll('[data-sel]')) b.onclick = () => select(JSON.parse(b.dataset.sel));
+  if ($('#topology-gateway')) $('#topology-gateway').onchange = (e) => { state.topoGW = Number(e.target.value); renderEditor(); };
   showTopologyTraffic();
 }
 
 // showTopologyTraffic refreshes edge rates in place on every metrics poll.
 function showTopologyTraffic() {
-  for (const t of document.querySelectorAll('[data-edge-label]')) t.textContent = `${Math.round(state.rates.get(t.dataset.edgeLabel) ?? 0)} /s`;
+  for (const t of document.querySelectorAll('[data-edge-label]')) t.textContent = state.online && state.metrics.has(t.dataset.edgeLabel) ? `${Math.round(state.rates.get(t.dataset.edgeLabel) ?? 0)} /s` : '—';
   for (const p of document.querySelectorAll('[data-edge]')) {
     const r = state.rates.get(p.dataset.edge) ?? 0;
-    p.style.animationDuration = r ? `${Math.max(0.25, 3 / r)}s` : '0s';
+    p.style.animationDuration = `${Math.max(0.25, 3 / Math.max(r, 1))}s`;
+    p.style.animationPlayState = r > 0 && state.online && !state.paused ? 'running' : 'paused';
   }
   for (const n of document.querySelectorAll('[data-node-live]')) {
     const c = state.metrics.get(n.dataset.nodeLive);
-    n.textContent = `${Math.round(state.rates.get(n.dataset.nodeLive) ?? 0)} req/s · p99 ${fmtMs(c?.p99_ms ?? 0)}`;
+    n.textContent = !c || state.online === false ? '运行数据未知' : `${Math.round(state.rates.get(n.dataset.nodeLive) ?? 0)} req/s · p99 ${c.requests ? fmtMs(c.p99_ms) : '—'}`;
   }
 }
 
 function moveRegisters(start) {
   state.reg.start = Math.min(65535, Math.max(0, start));
   state.reg.prev.clear();
-  $('#jump').value = hex(state.reg.start, 4);
+  $('#jump').value = state.addressBase === 16 ? hex(state.reg.start, 4) : state.reg.start;
   refreshRegisters();
 }
 
@@ -291,11 +335,12 @@ async function refreshRegisters() {
   let body;
   try {
     ({ body } = await api(`/api/v1/simulations/${encodeURIComponent(name)}/registers?table=${r.table}&start=${r.start}&count=${count}`));
-  } catch {
+  } catch (err) {
+    if (state.sel?.kind === 'sim' && cfg().simulations[state.sel.sim]?.name === name && $('#reg-error')) $('#reg-error').textContent = '寄存器读取失败，正在重试';
     return;
   }
-  if (state.sel?.kind !== 'sim' || body.start !== r.start || body.table !== r.table) return; // moved on meanwhile
-  r.page = rows * cols;
+  if (state.sel?.kind !== 'sim' || body.start !== r.start || body.table !== r.table || cfg().simulations[state.sel.sim]?.name !== name) return; // moved on meanwhile
+  r.page = Math.max(1, Math.min(2048, rows * cols));
   const bits = isBits(r.table);
   let h = `<div class="reg-row" role="row" style="grid-template-columns:${addrW}px repeat(${cols},1fr)"><div class="reg addr" role="columnheader"></div>${
     Array.from({ length: cols }, (_, i) => `<div class="reg addr head" role="columnheader">+${i}</div>`).join('')}</div>`;
@@ -306,17 +351,19 @@ async function refreshRegisters() {
       const addr = a0 + c, v = body.values[row * cols + c];
       const changed = r.prev.has(addr) && r.prev.get(addr) !== v;
       r.prev.set(addr, v);
-      h += `<div class="reg${changed ? ' hl' : ''}${v ? '' : ' zero'}" role="gridcell" aria-label="地址 ${addr}">${bits ? (v ? '●' : '○') : v}</div>`;
+      h += `<div class="reg${changed ? ' hl' : ''}${v ? '' : ' zero'}" role="gridcell" tabindex="0" data-address="${addr}" data-value="${v}" aria-label="地址 ${addr}">${bits ? (v ? '●' : '○') : v}</div>`;
     }
     h += '</div>';
   }
   el.innerHTML = h;
+  for (const cell of el.querySelectorAll('[data-address]')) { cell.onclick = () => showText('寄存器详情', `协议地址：${cell.dataset.address} / 0x${hex(Number(cell.dataset.address),4)}\n表：${r.table}\n值：${cell.dataset.value}`); cell.onkeydown = (e) => { if (e.key === 'Enter') cell.click(); }; }
+  for (const b of document.querySelectorAll('[data-step]')) b.disabled = b.dataset.step === '-1' ? r.start === 0 : r.start + count >= 65536;
   $('#reg-range').textContent = `${hex(r.start, 4)}–${hex(r.start + body.values.length - 1, 4)}`;
 }
 
 // showFieldProblems marks the editor's fields in place, so typing keeps focus.
 function showFieldProblems() {
-  for (const input of document.querySelectorAll('#center input[data-path]')) {
+  for (const input of document.querySelectorAll('#center [data-path]')) {
     const msgs = state.problems.filter((p) => pathKey(p.path) === input.dataset.path).map((p) => p.message);
     if (msgs.length) input.setAttribute('aria-invalid', 'true');
     else input.removeAttribute('aria-invalid');
@@ -345,15 +392,17 @@ function spark(hist, h) {
 }
 
 function renderInspector() {
+  if (state.sel?.kind === 'sim') { const name = cfg().simulations[state.sel.sim].name; const st = state.status?.simulations?.find(x => x.name === name); $('#insp').innerHTML = `<div class="insp-h">模拟从站 · ${esc(name)}</div><div>状态：${esc(st?.status || '未知')}</div><div>数据版本：${st?.version ?? '—'}</div><div>引用下游</div>${state.running.gateways.flatMap(g => (g.downstreams || []).filter(d => d.simulation?.ref === name).map(d => `<div>${esc(g.name)}/${esc(d.name)}</div>`)).join('') || '<div class="muted">无运行中引用</div>'}`; return; }
   const key = selKey();
+  if (key === '__unmatched__') { $('#insp').innerHTML = '<div class="pad muted">此配置对象未匹配到运行实例；重启后才能查看对应指标。</div>'; return; }
   const { counts, rate, hist } = seriesFor(key);
   const c = counts ?? { requests: 0, errors: 0, p50_ms: 0, p99_ms: 0 };
   const errRate = c.requests ? (c.errors / c.requests * 100).toFixed(2) : '0.00';
-  const kpi = (label, value) => `<div><b aria-label="${label}">${value}</b><span>${label}</span></div>`;
+  const kpi = (label, value) => `<div><b aria-label="${label}">${!counts || state.online === false ? '—' : value}</b><span>${label}</span></div>`;
   $('#insp').innerHTML = `<div class="insp-h">运行指标 <span class="muted">· ${esc(key ?? '全部')}</span></div>
-    <div class="kpi">${kpi('请求/秒', Math.round(rate))}${kpi('错误率', `${errRate}%`)}${kpi('p50', fmtMs(c.p50_ms))}${kpi('p99', fmtMs(c.p99_ms))}</div>
+    <div class="kpi">${kpi('请求/秒', Math.round(rate))}${kpi('错误率', `${errRate}%`)}${kpi('p50', c.requests ? fmtMs(c.p50_ms) : '—')}${kpi('p99', c.requests ? fmtMs(c.p99_ms) : '—')}</div>
     ${key ? `<div><div class="muted small">请求/秒 · 近 40 秒</div>${spark(hist, 52)}</div>` : ''}
-    <dl class="totals"><dt>累计请求</dt><dd class="mono" aria-label="累计请求">${c.requests}</dd><dt>累计错误</dt><dd class="mono" aria-label="累计错误">${c.errors}</dd></dl>
+    <dl class="totals"><dt>累计请求</dt><dd class="mono" aria-label="累计请求">${counts && state.online !== false ? c.requests : '—'}</dd><dt>累计错误</dt><dd class="mono" aria-label="累计错误">${counts && state.online !== false ? c.errors : '—'}</dd></dl>
     ${innerHeight >= 1000 ? '<div class="small">最近错误</div><ul class="recent" id="recent" aria-label="最近错误"></ul>' : ''}`;
   const recent = $('#recent');
   if (recent) {
@@ -365,7 +414,14 @@ function renderInspector() {
 
 // logMatches reports whether a request belongs to the series key (all
 // requests when key is null).
-const logMatches = (e, key) => !key || (key.includes('/') ? `${e.gateway}/${e.downstream}` === key : e.gateway === key);
+function logMatches(e, key) {
+  if (!key && state.sel?.kind === 'sim' && state.logScope === 'selected') {
+    const name = cfg().simulations[state.sel.sim]?.name;
+    const gateway = state.running.gateways.find(g => g.name === e.gateway);
+    return gateway?.downstreams.some(d => d.name === e.downstream && d.simulation?.ref === name) || false;
+  }
+  return !key || (key.includes('/') ? `${e.gateway}/${e.downstream}` === key : e.gateway === key);
+}
 
 // Log columns drop in priority order (4 first) when the dock is narrow.
 const LOG_COLS = [
@@ -383,15 +439,16 @@ const LOG_COLS = [
 function renderLog() {
   const el = $('#log');
   if (!el) return;
-  const key = selKey();
+  const key = state.logScope === 'gateway' && state.sel?.gw != null ? state.running.gateways[runningSelection()?.gw]?.name ?? '__unmatched__' : selKey();
   let cols = LOG_COLS;
   for (const lvl of [4, 3, 2]) {
     if (cols.reduce((w, c) => w + c[1] * K, 150) > el.clientWidth) cols = cols.filter((c) => c[2] < lvl);
   }
-  const rows = state.log.filter((e) => logMatches(e, key)).slice(0, fit(el, ROW_H));
+  const rows = (state.paused ? state.frozenLog : state.log).filter(e => logMatches(e,key) && (!state.errorsOnly || e.error) && (!state.slaveFilter || String(e.slave_id) === state.slaveFilter) && (!state.fcFilter || String(e.function_code) === state.fcFilter)).slice(0, state.paused ? LOG_CAP : fit(el, ROW_H));
   el.innerHTML = `<table class="t" aria-label="请求日志"><colgroup>${cols.map((c) => `<col style="${c[1] ? `width:${Math.round(c[1] * K)}px` : ''}">`).join('')}</colgroup>
     <thead><tr>${cols.map((c) => `<th>${c[0]}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map((e) => `<tr${e.error ? ' class="bad"' : ''}>${cols.map((c) => `<td>${c[3](e)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    <tbody>${rows.map((e,i) => `<tr tabindex="0" data-log-row="${i}"${e.error ? ' class="bad"' : ''}>${cols.map((c) => `<td>${c[3](e)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  for (const tr of el.querySelectorAll('[data-log-row]')) { tr.onclick = () => showText('请求详情', JSON.stringify(rows[Number(tr.dataset.logRow)], null, 2)); tr.onkeydown = (e) => { if (e.key === 'Enter') tr.click(); }; }
 }
 
 let logFrame = 0;
@@ -401,10 +458,12 @@ function scheduleLog() {
 
 function subscribeEvents() {
   const es = new EventSource('/api/v1/events');
+  es.onerror = () => { state.eventsOnline = false; setOnline(state.online); };
+  es.onopen = () => { state.eventsOnline = true; setOnline(state.online); };
   es.onmessage = (msg) => {
     const batch = JSON.parse(msg.data);
     state.log = [...batch.reverse(), ...state.log].slice(0, LOG_CAP);
-    scheduleLog();
+    if (!state.paused) scheduleLog();
   };
 }
 
@@ -412,6 +471,9 @@ function subscribeEvents() {
 // two polls; the server keeps no rate windows.
 let lastPoll = 0;
 async function pollMetrics() {
+  if (state.polling) return;
+  state.polling = true;
+  try {
   const now = performance.now();
   let body;
   try {
@@ -422,6 +484,7 @@ async function pollMetrics() {
     lastPoll = 0;
     return;
   }
+  state.lastUpdate = new Date();
   setOnline(true);
   const dt = lastPoll ? (now - lastPoll) / 1000 : 0;
   lastPoll = now;
@@ -432,25 +495,31 @@ async function pollMetrics() {
   }
   for (const [key, c] of next) {
     const prev = state.metrics.get(key);
-    const rate = prev && dt ? (c.requests - prev.requests) / dt : 0;
+    const rate = prev && dt ? Math.max(0, c.requests - prev.requests) / dt : 0;
     state.rates.set(key, rate);
     state.history.set(key, [...(state.history.get(key) ?? []), rate].slice(-40));
   }
   state.metrics = next;
-  renderInspector();
-  showTopologyTraffic();
+  if (!state.paused) { renderInspector(); showTopologyTraffic(); }
   try { state.status = (await api('/api/v1/status')).body; } catch { return; }
-  showSimStatus();
-  refreshRegisters();
+  if (!state.paused) { showSimStatus(); refreshRegisters(); }
+  if (state.status.startup_revision !== state.startupRevision) { state.running = (await api('/api/v1/running-config')).body; state.startupRevision = state.status.startup_revision; state.metrics.clear(); state.history.clear(); renderEditor(); }
+  if (state.saving) return;
+  const revision = state.config.revision;
+  const current = (await api('/api/v1/config')).body;
+  if (state.saving || state.config.revision !== revision) return;
+  if (current.revision !== state.config.revision) { state.stale = true; renderToolbar(); }
+  else if (current.running_matches !== state.config.running_matches) { state.config.running_matches = current.running_matches; renderToolbar(); }
+  } catch (err) { state.notice = err.message; renderToolbar(); } finally { state.polling = false; }
 }
 
 function renderDock() {
-  const key = selKey();
+  const key = state.logScope === 'gateway' && runningSelection() ? state.running.gateways[runningSelection().gw].name : selKey();
   const n = state.problems.length;
   const tab = (id, label) => `<button role="tab" aria-selected="${state.dockTab === id}" data-dock="${id}">${label}</button>`;
   $('#dock').innerHTML = `<div class="dock-tabs" role="tablist">
       ${tab('log', '请求日志')}${tab('problems', `问题${n ? ` <span class="badge err">${n}</span>` : ''}`)}${desktop ? tab('output', '网关输出') : ''}
-      <span class="sp"></span><span class="faint">${state.dockTab === 'log' ? (key ? `筛选：${esc(key)}` : '全部网关') : ''}</span>
+      <span class="sp"></span><span class="faint">${state.dockTab === 'log' ? (key ? `筛选：${esc(key)}` : state.sel?.kind === 'sim' && state.logScope === 'selected' ? `关联模拟从站：${esc(cfg().simulations[state.sel.sim].name)}` : '全部网关') : ''}</span>
     </div><div class="fill" id="dock-body"></div>`;
   for (const t of document.querySelectorAll('[data-dock]')) {
     t.onclick = () => { state.dockTab = t.dataset.dock; renderDock(); };
@@ -462,12 +531,18 @@ function renderDockBody() {
   const body = $('#dock-body');
   if (!body) return;
   if (state.dockTab === 'log') {
-    body.innerHTML = '<div class="fill" id="log"></div>';
+    body.innerHTML = `<div class="log-controls"><button class="btn" id="pause-log">${state.paused ? '恢复实时' : '暂停显示'}</button><label><input id="errors-only" type="checkbox" ${state.errorsOnly ? 'checked' : ''}>仅看错误</label><select id="log-scope" aria-label="日志范围"><option value="selected">选中对象</option><option value="gateway" ${state.logScope === 'gateway' ? 'selected' : ''}>${state.sel?.kind === 'sim' ? '全部网关' : '整个网关'}</option></select><input id="slave-filter" aria-label="筛选 Slave ID" placeholder="Slave ID" value="${esc(state.slaveFilter)}"><input id="fc-filter" aria-label="筛选功能码" placeholder="功能码（十进制）" value="${esc(state.fcFilter)}"><span class="small">${state.paused ? '显示已暂停，转发仍在继续' : '最近请求样本'}</span></div><div class="fill ${state.paused ? 'scroll' : ''}" id="log"></div>`;
+    $('#pause-log').onclick = togglePause;
+    $('#errors-only').onchange = (e) => { state.errorsOnly = e.target.checked; renderLog(); };
+    $('#log-scope').onchange = (e) => { state.logScope = e.target.value; renderDock(); };
+    for (const [id,key] of [['slave-filter','slaveFilter'],['fc-filter','fcFilter']]) $('#'+id).oninput = (e) => { state[key] = e.target.value; renderLog(); };
     renderLog();
   } else if (state.dockTab === 'problems') {
     body.innerHTML = state.problems.length
-      ? `<table class="t" aria-label="问题"><tbody>${state.problems.map((p) => `<tr><td class="err-txt" style="width:24px">✕</td><td>${esc(p.message)}</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="t" aria-label="问题"><tbody>${state.problems.map((p,i) => `<tr data-problem="${i}" tabindex="0"><td class="err-txt" style="width:24px">✕</td><td>${esc(p.path.join(' → '))}：${esc(p.message)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="muted pad">没有发现问题</div>';
+    body.classList.add('scroll');
+    for (const row of body.querySelectorAll('[data-problem]')) { row.onclick = () => locateProblem(state.problems[Number(row.dataset.problem)]); row.onkeydown = (e) => { if (e.key === 'Enter') row.click(); }; }
   } else {
     renderOutput();
   }
@@ -482,38 +557,55 @@ function scheduleOutput() {
 function renderOutput() {
   const body = $('#dock-body');
   if (!body || state.dockTab !== 'output') return;
-  const lines = state.output.slice(-Math.max(1, Math.floor(body.clientHeight / Math.round(18 * K))));
+  const lines = state.output;
+  body.classList.add('scroll');
   body.innerHTML = `<div class="output mono" role="log" aria-label="网关输出">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>`;
 }
 
 function renderToolbar() {
   const n = state.edits.size;
-  const canSave = n > 0 && state.problems.length === 0 && !state.validating && !state.stale;
+  const reason = state.transitioning ? '正在重启网关…' : state.config.schema_version !== 1 ? '旧版配置仅支持查看，需手动迁移至 version: 1' : state.saving ? '正在保存…' : state.validating ? '正在校验…' : state.stale ? '文件已被外部修改' : state.validationFailed ? '校验失败，请重试' : state.problems.length ? `存在 ${state.problems.length} 个问题` : !n ? '没有未保存修改' : '';
+  const canSave = n > 0 && !reason;
   const file = state.status?.config_path?.split(/[\\/]/).pop() || '配置文件';
   $('#toolbar').innerHTML = `<span class="file" title="${esc(state.status?.config_path)}">${esc(file)}${n ? ' •' : ''}</span>
-    <button class="btn ${canSave ? 'pri' : ''}" id="save" ${canSave ? '' : 'disabled'}>保存 <span class="kbd">Ctrl+S</span></button>
-    ${desktop ? '<button class="btn" id="restart">重启网关</button>' : ''}
+    <button class="btn ${canSave ? 'pri' : ''}" id="save" title="${esc(reason)}" ${canSave ? '' : 'disabled'}>保存 <span class="kbd">${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S</span></button>
+    ${n ? '<button class="btn" id="changes">查看修改</button><button class="btn" id="discard">放弃修改</button>' : ''}
+    ${desktop ? `<button class="btn" id="restart" ${state.transitioning ? 'disabled' : ''}>重启网关</button>` : !state.config.running_matches ? '<button class="btn" id="apply-help">如何生效</button>' : ''}
     <span class="sp"></span>
-    ${state.stale ? '<span class="stale" role="alert">配置文件已在别处被修改，当前修改无法保存。<button class="btn" id="reload">重新加载</button></span>' : ''}
-    ${n ? `<span class="badge warn">${n} 处未保存修改 · 保存后需重启生效</span>`
-      : state.config.running_matches ? '<span class="badge">配置与运行中一致</span>'
-      : '<span class="badge warn">已保存，重启网关后生效</span>'}`;
+    ${state.stale ? '<span class="stale" role="alert">配置文件已在别处被修改，当前修改无法保存。<button class="btn" id="copy-edits">复制修改</button><button class="btn" id="reload">重新加载</button></span>' : ''}
+    ${n ? `<span class="badge warn">${n} 处未保存修改 · 保存后需重启生效</span>` : state.config.running_matches ? '<span class="badge">配置与运行中一致</span>' : '<span class="badge warn">已保存，重启网关后生效 · 运行中仍使用旧配置</span>'}
+    ${reason && n || state.config.schema_version !== 1 ? `<span class="small">${esc(reason)}</span>` : ''}
+    ${state.validationFailed ? '<button class="btn" id="retry-validation">重新校验</button>' : ''}
+    ${state.notice ? `<span class="notice" role="alert">${esc(state.notice)}</span>` : ''}`;
   $('#save').onclick = save;
+  if ($('#retry-validation')) $('#retry-validation').onclick = () => { state.validating = true; state.validationFailed = false; renderToolbar(); validate(); };
   if ($('#restart')) $('#restart').onclick = () => desktop.restartGateway();
   if ($('#reload')) $('#reload').onclick = reload;
+  if ($('#changes')) $('#changes').onclick = () => showText('未保存修改', editsText());
+  if ($('#copy-edits')) $('#copy-edits').onclick = () => copyText(editsText());
+  if ($('#discard')) $('#discard').onclick = async () => { if (await ask('放弃修改', '将丢弃所有未保存修改。', ['放弃修改','取消']) === '放弃修改') { dropEdits(); render(); } };
+  if ($('#apply-help')) $('#apply-help').onclick = () => showText('使配置生效', '文件已保存，运行中仍使用旧配置。请通过实际部署方式重启服务：systemd、Docker 或启动网关的终端。连接恢复后将自动核对配置状态。');
+  for (const input of document.querySelectorAll('[data-path]')) input.disabled = state.saving || state.transitioning;
+  desktop?.setDirty(n > 0, n ? {config:state.config,edits:[...state.edits.values()]} : null);
 }
 
-// reload drops unsaved edits and shows the file as it now is on disk.
-async function reload() {
+function dropEdits() {
   clearTimeout(validateTimer);
   validateSeq++;
-  state.edits.clear();
-  changed();
-  state.problems = [];
-  state.stale = false;
-  state.validating = false;
-  await loadConfig();
-  render();
+  state.edits.clear(); changed(); state.problems = []; state.validating = false; state.validationFailed = false;
+}
+
+async function reload() {
+  if (state.edits.size && await ask('重新加载配置', '将丢弃未保存修改。可先取消并复制修改内容。', ['丢弃并重新加载','取消']) !== '丢弃并重新加载') return false;
+  try {
+    const next = (await api('/api/v1/config')).body;
+    dropEdits(); if (next.schema_version !== 1) next.config = structuredClone(state.running); state.config = next; state.stale = false; state.notice = ''; ensureSelection(); render(); return true;
+  } catch (err) { state.notice = `重新加载失败：${err.message}`; renderToolbar(); return false; }
+}
+
+function ensureSelection() {
+  const c = cfg(), s = state.sel;
+  if (!s || (s.kind === 'sim' ? !c.simulations?.[s.sim] : !c.gateways?.[s.gw] || s.kind === 'ds' && !c.gateways[s.gw].downstreams?.[s.ds])) state.sel = c.gateways?.length ? {kind:'gw',gw:0} : c.simulations?.length ? {kind:'sim',sim:0} : null;
 }
 
 async function loadConfig() {
@@ -522,35 +614,41 @@ async function loadConfig() {
 }
 
 async function save() {
-  clearTimeout(validateTimer);
-  const { status, body } = await api('/api/v1/config', {
-    method: 'PUT',
-    body: JSON.stringify({ base_revision: state.config.revision, edits: [...state.edits.values()] }),
-  });
-  if (status === 409) {
-    state.stale = true;
-    renderToolbar();
-    return;
-  }
-  if (status === 422) {
-    state.problems = body.problems ?? [];
-    render();
-    return;
-  }
-  state.edits.clear();
-  changed();
-  state.problems = [];
-  await loadConfig();
-  render();
+  if (state.saving || !state.edits.size || state.stale) return false;
+  clearTimeout(validateTimer); validateSeq++;
+  state.saving = true; state.notice = ''; renderToolbar();
+  const edits = [...state.edits.values()];
+  try {
+    const { status, body } = await api('/api/v1/config', {method:'PUT', body:JSON.stringify({base_revision:state.config.revision, edits})});
+    if (status === 409) { state.stale = true; return false; }
+    if (status === 422) { state.problems = body.problems ?? []; state.notice = body.error || '保存失败，请修复配置问题'; state.dockTab = 'problems'; return false; }
+    // Inputs are locked during saving; do not clear edits until the write is confirmed.
+    dropEdits(); state.config.revision = body.revision;
+    for (const edit of edits) getIn(state.config.config, edit.path.slice(0,-1))[edit.path[edit.path.length-1]] = edit.value;
+    state.config.running_matches = false; changed(); state.notice = '文件已保存'; return true;
+  } catch (err) { state.notice = `保存失败：${err.message}`; return false; }
+  finally { state.saving = false; render(); }
+}
+
+async function guardLeave() {
+  if (state.saving) return false;
+  if (!state.edits.size) return true;
+  const choice = await ask('存在未保存修改', '继续操作前，请保存或明确放弃修改。', ['保存并继续','放弃修改','取消']);
+  if (choice === '保存并继续') return save();
+  if (choice === '放弃修改') { dropEdits(); render(); return true; }
+  return false;
 }
 
 // setEdit records (or, when the value is back to the saved one, drops) an
 // edit, then revalidates the whole draft shortly after typing stops.
 let validateTimer;
 function setEdit(path, value) {
+  if (typeof getIn(state.config.config,path) === 'boolean' && /^(true|false)$/.test(value)) value = value === 'true';
+  if (typeof getIn(state.config.config,path) === 'number' && value.trim() && Number.isFinite(Number(value))) value = Number(value);
   if (getIn(state.config.config, path) === value) state.edits.delete(pathKey(path));
   else state.edits.set(pathKey(path), { op: 'set', path, value });
   changed();
+  validateSeq++; state.validationFailed = false; state.notice = "";
   state.validating = true;
   renderToolbar();
   clearTimeout(validateTimer);
@@ -560,27 +658,24 @@ function setEdit(path, value) {
 let validateSeq = 0;
 async function validate() {
   const seq = ++validateSeq;
-  const { status, body } = await api('/api/v1/config/validate', {
-    method: 'POST',
-    body: JSON.stringify({ base_revision: state.config.revision, edits: [...state.edits.values()] }),
-  });
-  if (seq !== validateSeq) return; // superseded by newer typing
-  state.stale = status === 409;
-  state.problems = body.problems ?? [];
-  state.validating = false;
-  renderTree();
-  renderToolbar();
-  renderDock();
-  showFieldProblems();
-  renderTopology(); // node labels and conflict marks follow the draft
+  try {
+    const {status, body} = await api('/api/v1/config/validate', {method:'POST', body:JSON.stringify({base_revision:state.config.revision, edits:[...state.edits.values()]})});
+    if (seq !== validateSeq) return;
+    state.stale = status === 409; state.problems = body.problems ?? []; state.notice = body.error && status !== 409 ? body.error : '';
+    state.validationFailed = status === 422 && !body.problems;
+  } catch (err) { if (seq !== validateSeq) return; state.validationFailed = true; state.notice = `校验失败：${err.message}`; }
+  finally {
+    if (seq === validateSeq) { state.validating = false; renderTree(); renderToolbar(); renderDock(); showFieldProblems(); renderTopology(); }
+  }
 }
 
 function setOnline(online) {
-  if (state.online === online) return;
   state.online = online;
   $('#status').innerHTML = online
-    ? '<span><span class="dot"></span> 已连接网关</span><span class="sp"></span>'
-    : '<span role="alert"><span class="dot warn"></span> 与网关的连接已断开，正在重试…</span><span class="sp"></span>';
+    ? '<span><span class="dot"></span> 管理连接正常（不代表 Modbus 监听健康）</span><span class="sp"></span>'
+    : '<span role="alert"><span class="dot warn"></span> 管理连接已断开，正在重试… · 数据已过期</span><span class="sp"></span>';
+  $('#status').innerHTML += `<span>${state.lastUpdate ? '最后更新 ' + state.lastUpdate.toLocaleTimeString() : '等待数据'}</span>${state.eventsOnline === false ? '<span>请求日志连接已断开，正在重试</span>' : ''}${desktop ? '<span>关闭应用会停止转发</span>' : ''}`;
+  if (!online) renderInspector();
 }
 
 function render() {
@@ -589,26 +684,45 @@ function render() {
   renderEditor();
   renderInspector();
   renderDock();
+  for (const input of document.querySelectorAll('[data-path]')) input.disabled = state.saving || state.transitioning;
 }
 
 function select(sel) {
-  state.sel = sel;
+  if (!sel) return;
+  if (sel.gw != null) state.collapsed.delete(sel.gw);
+  state.sel = sel; state.topoGW = null; state.reg.prev.clear();
   render();
 }
 
 async function start() {
   await loadConfig();
+  state.running = (await api('/api/v1/running-config')).body;
+  if (state.config.schema_version !== 1) { state.config.config = structuredClone(state.running); changed(); }
   state.status = (await api('/api/v1/status')).body;
+  state.startupRevision = state.status.startup_revision;
   addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !e.defaultPrevented && !e.target.closest('input,textarea,select,button,[contenteditable],dialog')) { e.preventDefault(); togglePause(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-      e.preventDefault(); // not the browser's "save page"
+      e.preventDefault();
+      if (e.target.closest('dialog')) return; // not the browser's "save page"
       if (!$('#save')?.disabled) save();
     }
   });
-  if (cfg().gateways?.[0]?.downstreams?.length) state.sel = { kind: 'ds', gw: 0, ds: 0 };
-  render();
-  subscribeEvents();
   if (desktop) {
+    const recovered = await desktop.getDraft();
+    if (recovered?.edits?.length) {
+      if (recovered.config.revision !== state.config.revision) { state.config = recovered.config; state.stale = true; }
+      state.edits = new Map(recovered.edits.map(edit => [pathKey(edit.path),edit])); changed(); state.notice = '已恢复网关停止前的未保存草稿';
+    }
+  }
+  ensureSelection();
+  render();
+  if (state.edits.size && !state.stale) validate();
+  subscribeEvents();
+  addEventListener('beforeunload', (e) => { if (state.edits.size && !desktop) { e.preventDefault(); e.returnValue = ''; } });
+  if (desktop) {
+    desktop.onGuard(async (id) => desktop.guardResult(id, await guardLeave()));
+    desktop.onPhase((phase) => { state.transitioning = true; state.notice = phase; renderToolbar(); $('#restart').disabled = true; for (const input of document.querySelectorAll('[data-path]')) input.disabled = true; });
     desktop.onView((view) => { state.view = view; renderEditor(); });
     state.output = await desktop.getOutput();
     desktop.onOutput((lines) => {
@@ -626,4 +740,70 @@ async function start() {
   });
 }
 
-start();
+start().catch(err => { $('#center').innerHTML = `<div class="pad" role="alert">控制台加载失败：${esc(err.message)}<button class="btn" id="retry-start">重新加载</button></div>`; $('#retry-start').onclick = () => location.reload(); });
+
+function togglePause() {
+  state.paused = !state.paused;
+  if (state.paused) state.frozenLog = state.log.slice();
+  renderDock(); showTopologyTraffic();
+}
+
+function ask(title, message, choices) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML = `<h2>${esc(title)}</h2><p>${esc(message)}</p><div class="dialog-actions">${choices.map(c => `<button class="btn" data-choice="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
+    document.body.append(dialog); dialog.showModal();
+    const finish = choice => { dialog.close(); dialog.remove(); resolve(choice); };
+    dialog.oncancel = e => { e.preventDefault(); finish('取消'); };
+    for (const b of dialog.querySelectorAll('[data-choice]')) b.onclick = () => finish(b.dataset.choice);
+    dialog.querySelector('button:last-child').focus();
+  });
+}
+
+function editsText() {
+  return [...state.edits.values()].map(e => `${e.path.join(' → ')}: ${JSON.stringify(getIn(state.config.config,e.path))} → ${JSON.stringify(e.value)}`).join('\n');
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch { const area = document.createElement('textarea'); area.value = text; document.body.append(area); area.select(); const copied = document.execCommand('copy'); area.remove(); if (!copied) showText('请手动复制', text); }
+}
+
+function showText(title, text) {
+  const dialog = document.createElement('dialog');
+  dialog.innerHTML = `<h2>${esc(title)}</h2><pre>${esc(text)}</pre><div class="dialog-actions"><button class="btn" data-copy>复制</button><button class="btn" data-close>关闭</button></div>`;
+  document.body.append(dialog); dialog.showModal();
+  dialog.querySelector('[data-copy]').onclick = () => copyText(text);
+  dialog.querySelector('[data-close]').onclick = () => dialog.close();
+  dialog.onclose = () => dialog.remove();
+}
+
+function locateProblem(problem) {
+  const p = problem.path;
+  if (p[0] === 'gateways') state.sel = typeof p[3] === 'number' && p[2] === 'downstreams' ? {kind:'ds',gw:p[1],ds:p[3]} : {kind:'gw',gw:p[1]};
+  else if (p[0] === 'simulations') state.sel = {kind:'sim',sim:p[1]};
+  state.view = 'detail'; ensureSelection(); render();
+  const input = [...document.querySelectorAll('[data-path]')].find(el => el.dataset.path === pathKey(p));
+  if (input) { input.focus(); input.scrollIntoView({block:'nearest'}); }
+}
+
+$('#compact-mode').onclick = () => { document.body.classList.add('compact-mode'); $('#app').classList.add('compact'); renderEditor(); };
+$('#toggle-inspector').onclick = () => { $('#app').classList.toggle('hide-inspector'); renderEditor(); };
+$('#maximize-pane').onclick = () => { $('#app').classList.toggle('maximize'); renderEditor(); };
+$('#reset-layout').onclick = () => { $('#app').classList.remove('hide-inspector','maximize','compact'); document.body.classList.remove('compact-mode'); document.documentElement.style.removeProperty('--side-w'); document.documentElement.style.removeProperty('--dock-h'); renderEditor(); };
+for (const [cls, prop, axis] of [['resize-side','--side-w','x'],['resize-dock','--dock-h','y']]) {
+  const handle = document.createElement('div'); handle.className = cls; handle.title = '拖动调整，双击恢复默认'; $('.main').append(handle);
+  handle.ondblclick = () => { document.documentElement.style.removeProperty(prop); renderEditor(); };
+  handle.onpointerdown = e => {
+    handle.setPointerCapture(e.pointerId);
+    handle.onpointermove = event => { const rect = $('.main').getBoundingClientRect(); const value = axis === 'x' ? Math.min(400,Math.max(180,event.clientX)) : Math.min(rect.height - 150,Math.max(140,rect.bottom-event.clientY)); document.documentElement.style.setProperty(prop, value+'px'); scheduleLog(); renderTopology(); };
+    handle.onpointerup = () => { handle.onpointermove = null; renderEditor(); };
+  };
+}
+
+function simulationField(value, path) {
+  if (state.config.schema_version !== 1) return field('模拟从站', value);
+  const names = (cfg().simulations || []).map(sim => sim.name);
+  if (!names.includes(value)) names.unshift(value);
+  return `<div class="field"><label for="simulation-ref">模拟从站</label><select id="simulation-ref" data-path='${JSON.stringify(path)}'>${names.map(name => `<option ${name === value ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></div><div class="field-err" data-err-for='${JSON.stringify(path)}'></div>`;
+}

@@ -606,3 +606,49 @@ func TestHandler_SetsHeadersThatStopFramingAndSniffing(t *testing.T) {
 		}
 	}
 }
+
+func TestRunningConfigPreservesStartupRoutesAfterDiskChanges(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("version: 1\ngateways: []\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := &config.Config{Gateways: []config.GatewayConfig{{Name: "running", Downstreams: []config.DownstreamConfig{{Name: "original", Type: "local", SlaveIDs: "100", SimulationRef: "model"}}}}, Simulations: []config.SimulationConfig{{Name: "model"}}}
+	h := NewHandler(Deps{ConfigPath: path, RunningConfig: c})
+	var tree map[string]any
+	getJSON(t, h, "/api/v1/running-config", &tree)
+	g := tree["gateways"].([]any)[0].(map[string]any)
+	if g["name"] != "running" || g["downstreams"].([]any)[0].(map[string]any)["name"] != "original" {
+		t.Fatalf("unexpected running tree: %v", tree)
+	}
+}
+
+func TestRunningIndexMatchesConsoleEditsButNotExternalWrites(t *testing.T) {
+	path, revision := writeConfig(t, sampleConfig)
+	h := NewHandler(Deps{ConfigPath: path, StartupRevision: revision})
+	var response struct {
+		Revision     string `json:"revision"`
+		IndexMatches bool   `json:"running_index_matches"`
+	}
+	getJSON(t, h, "/api/v1/config", &response)
+	if !response.IndexMatches {
+		t.Fatal("startup document should retain runtime indexes")
+	}
+	code := postJSON(t, h, http.MethodPut, "/api/v1/config", map[string]any{
+		"base_revision": revision,
+		"edits":         []any{setEdit("renamed", "gateways", 0, "downstreams", 0, "name")},
+	}, &response)
+	if code != http.StatusOK {
+		t.Fatalf("save returned %d", code)
+	}
+	getJSON(t, h, "/api/v1/config", &response)
+	if !response.IndexMatches {
+		t.Fatal("renaming an existing scalar must retain runtime indexes")
+	}
+	if err := os.WriteFile(path, []byte(sampleConfig+"# external write\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	getJSON(t, h, "/api/v1/config", &response)
+	if response.IndexMatches {
+		t.Fatal("external versions must use name matching instead of positional matching")
+	}
+}

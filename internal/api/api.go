@@ -16,7 +16,9 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 
+	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
@@ -28,15 +30,28 @@ type Deps struct {
 	// StartupRevision is the config file's revision when the process loaded
 	// it; the running gateways reflect exactly that content.
 	StartupRevision string
+	RunningConfig   *config.Config
 	Simulations     []*simulation.Simulation
 	Telemetry       *telemetry.Recorder
 	// Static is the console front end, served at "/".
-	Static fs.FS
+	Static   fs.FS
+	identity *runtimeIdentity
+}
+
+// runtimeIdentity tracks revisions whose object order still matches startup.
+type runtimeIdentity struct {
+	sync.RWMutex
+	revision string
 }
 
 // NewHandler returns the handler for every /api/v1/ endpoint.
 func NewHandler(d Deps) http.Handler {
+	d.identity = &runtimeIdentity{revision: d.StartupRevision}
 	mux := http.NewServeMux()
+	running := runningTree(d.RunningConfig)
+	mux.HandleFunc("/api/v1/running-config", get(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, running)
+	}))
 	mux.HandleFunc("/api/v1/status", get(func(w http.ResponseWriter, r *http.Request) {
 		type simStatus struct {
 			Name    string `json:"name"`
@@ -48,9 +63,10 @@ func NewHandler(d Deps) http.Handler {
 			sims = append(sims, simStatus{Name: s.Name, Status: string(s.Status()), Version: s.Version()})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"version":     d.Version,
-			"config_path": d.ConfigPath,
-			"simulations": sims,
+			"version":          d.Version,
+			"startup_revision": d.StartupRevision,
+			"config_path":      d.ConfigPath,
+			"simulations":      sims,
 		})
 	}))
 	mux.HandleFunc("/api/v1/metrics", get(func(w http.ResponseWriter, r *http.Request) {

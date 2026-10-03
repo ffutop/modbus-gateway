@@ -206,6 +206,7 @@ func main() {
 		Version:         version,
 		ConfigPath:      cfg.Path,
 		StartupRevision: cfg.Revision,
+		RunningConfig:   cfg,
 		Simulations:     sortedSimulations(simulations),
 		Telemetry:       recorder,
 		Static:          web.Assets,
