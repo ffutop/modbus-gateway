@@ -5,9 +5,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('modmuxDesktop', {
-  // The gateway's recent stdout/stderr lines, then each new one.
+  // The gateway's recent stdout/stderr lines, then each new batch of lines.
   getOutput: () => ipcRenderer.invoke('gateway:output'),
-  onOutput: (callback) => ipcRenderer.on('gateway:output', (_event, line) => callback(line)),
+  onOutput: (callback) => ipcRenderer.on('gateway:output', (_event, lines) => callback(lines)),
   // Stops the gateway gracefully and starts it again on the same config;
   // the window then reloads from the restarted gateway.
   restartGateway: () => ipcRenderer.invoke('gateway:restart'),

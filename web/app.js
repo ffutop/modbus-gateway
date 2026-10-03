@@ -464,6 +464,11 @@ function renderDockBody() {
   }
 }
 
+let outputFrame = 0;
+function scheduleOutput() {
+  if (!outputFrame) outputFrame = requestAnimationFrame(() => { outputFrame = 0; renderOutput(); });
+}
+
 // renderOutput shows the newest gateway output lines that fit.
 function renderOutput() {
   const body = $('#dock-body');
@@ -593,10 +598,9 @@ async function start() {
   if (desktop) {
     desktop.onView((view) => { state.view = view; renderEditor(); });
     state.output = await desktop.getOutput();
-    desktop.onOutput((line) => {
-      state.output.push(line);
-      if (state.output.length > 500) state.output.shift();
-      renderOutput();
+    desktop.onOutput((lines) => {
+      state.output = state.output.concat(lines).slice(-500);
+      scheduleOutput();
     });
   }
   pollMetrics();

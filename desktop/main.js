@@ -38,8 +38,19 @@ ipcMain.handle('gateway:restart', () => restartGateway());
 gateway.on('crashed', ({ code, signal }) => {
   showStopped({ title: '网关已停止', reason: signal ? `被信号 ${signal} 终止` : `退出码 ${code}` });
 });
+// Output is forwarded in batches: a busy gateway can log a line per request
+// (e.g. an unreachable downstream), far more often than the window repaints.
+const OUTPUT_FLUSH_MS = 100;
+let pendingOutput = [];
+let outputTimer = null;
 gateway.on('output', (line) => {
-  if (win && !win.isDestroyed()) win.webContents.send('gateway:output', line);
+  pendingOutput.push(line);
+  outputTimer ??= setTimeout(() => {
+    outputTimer = null;
+    const lines = pendingOutput;
+    pendingOutput = [];
+    if (win && !win.isDestroyed()) win.webContents.send('gateway:output', lines);
+  }, OUTPUT_FLUSH_MS);
 });
 
 // withToken adds the gateway's token to every request the window makes to
