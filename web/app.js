@@ -52,14 +52,23 @@ const pathKey = (path) => JSON.stringify(path);
 const getIn = (tree, path) => path.reduce((n, k) => (n == null ? n : n[k]), tree);
 
 // cfg is the config as the user currently sees it: the saved file with the
-// unsaved edits applied.
+// unsaved edits applied. It is rebuilt only after the file or the edits
+// change (see changed); callers must treat it as read-only.
+let draft = null;
 function cfg() {
-  const draft = structuredClone(state.config.config);
-  for (const { path, value } of state.edits.values()) {
-    const parent = getIn(draft, path.slice(0, -1));
-    if (parent) parent[path[path.length - 1]] = value;
+  if (!draft) {
+    draft = structuredClone(state.config.config);
+    for (const { path, value } of state.edits.values()) {
+      const parent = getIn(draft, path.slice(0, -1));
+      if (parent) parent[path[path.length - 1]] = value;
+    }
   }
   return draft;
+}
+
+// changed must follow any change to state.config or state.edits.
+function changed() {
+  draft = null;
 }
 
 const problemsUnder = (prefix) =>
@@ -499,6 +508,7 @@ async function reload() {
   clearTimeout(validateTimer);
   validateSeq++;
   state.edits.clear();
+  changed();
   state.problems = [];
   state.stale = false;
   state.validating = false;
@@ -508,6 +518,7 @@ async function reload() {
 
 async function loadConfig() {
   state.config = (await api('/api/v1/config')).body;
+  changed();
 }
 
 async function save() {
@@ -527,6 +538,7 @@ async function save() {
     return;
   }
   state.edits.clear();
+  changed();
   state.problems = [];
   await loadConfig();
   render();
@@ -538,6 +550,7 @@ let validateTimer;
 function setEdit(path, value) {
   if (getIn(state.config.config, path) === value) state.edits.delete(pathKey(path));
   else state.edits.set(pathKey(path), { op: 'set', path, value });
+  changed();
   state.validating = true;
   renderToolbar();
   clearTimeout(validateTimer);
