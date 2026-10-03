@@ -3,6 +3,9 @@
 'use strict';
 
 const $ = (s) => document.querySelector(s);
+// desktop is the API the Electron shell exposes (desktop/preload.js); null
+// in a browser, where desktop-only controls are not shown.
+const desktop = window.modmuxDesktop ?? null;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
@@ -12,6 +15,8 @@ const state = {
   problems: [], // from POST /api/v1/config/validate for the current edits
   validating: false,
   stale: false, // the file changed on disk since it was loaded (409)
+  dockTab: 'log', // 'log' | 'problems' | 'output' (desktop only)
+  output: [], // desktop only: the gateway process's recent output lines
   log: [], // request events from /api/v1/events, newest first
   metrics: new Map(), // series key ("gw" or "gw/ds") -> latest Counts
   rates: new Map(), // series key -> req/s between the last two polls
@@ -433,12 +438,38 @@ async function pollMetrics() {
 function renderDock() {
   const key = selKey();
   const n = state.problems.length;
+  const tab = (id, label) => `<button role="tab" aria-selected="${state.dockTab === id}" data-dock="${id}">${label}</button>`;
   $('#dock').innerHTML = `<div class="dock-tabs" role="tablist">
-      <span role="tab" aria-selected="true">请求日志</span>
-      <span role="tab" aria-selected="false">问题${n ? ` <span class="badge err">${n}</span>` : ''}</span>
-      <span class="sp"></span><span class="faint">${key ? `筛选：${esc(key)}` : '全部网关'}</span>
-    </div><div class="fill" id="log"></div>`;
-  renderLog();
+      ${tab('log', '请求日志')}${tab('problems', `问题${n ? ` <span class="badge err">${n}</span>` : ''}`)}${desktop ? tab('output', '网关输出') : ''}
+      <span class="sp"></span><span class="faint">${state.dockTab === 'log' ? (key ? `筛选：${esc(key)}` : '全部网关') : ''}</span>
+    </div><div class="fill" id="dock-body"></div>`;
+  for (const t of document.querySelectorAll('[data-dock]')) {
+    t.onclick = () => { state.dockTab = t.dataset.dock; renderDock(); };
+  }
+  renderDockBody();
+}
+
+function renderDockBody() {
+  const body = $('#dock-body');
+  if (!body) return;
+  if (state.dockTab === 'log') {
+    body.innerHTML = '<div class="fill" id="log"></div>';
+    renderLog();
+  } else if (state.dockTab === 'problems') {
+    body.innerHTML = state.problems.length
+      ? `<table class="t" aria-label="问题"><tbody>${state.problems.map((p) => `<tr><td class="err-txt" style="width:24px">✕</td><td>${esc(p.message)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="muted pad">没有发现问题</div>';
+  } else {
+    renderOutput();
+  }
+}
+
+// renderOutput shows the newest gateway output lines that fit.
+function renderOutput() {
+  const body = $('#dock-body');
+  if (!body || state.dockTab !== 'output') return;
+  const lines = state.output.slice(-Math.max(1, Math.floor(body.clientHeight / Math.round(18 * K))));
+  body.innerHTML = `<div class="output mono" role="log" aria-label="网关输出">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>`;
 }
 
 function renderToolbar() {
@@ -447,12 +478,14 @@ function renderToolbar() {
   const file = state.status?.config_path?.split(/[\\/]/).pop() || '配置文件';
   $('#toolbar').innerHTML = `<span class="file" title="${esc(state.status?.config_path)}">${esc(file)}${n ? ' •' : ''}</span>
     <button class="btn ${canSave ? 'pri' : ''}" id="save" ${canSave ? '' : 'disabled'}>保存 <span class="kbd">Ctrl+S</span></button>
+    ${desktop ? '<button class="btn" id="restart">重启网关</button>' : ''}
     <span class="sp"></span>
     ${state.stale ? '<span class="stale" role="alert">配置文件已在别处被修改，当前修改无法保存。<button class="btn" id="reload">重新加载</button></span>' : ''}
     ${n ? `<span class="badge warn">${n} 处未保存修改 · 保存后需重启生效</span>`
       : state.config.running_matches ? '<span class="badge">配置与运行中一致</span>'
       : '<span class="badge warn">已保存，重启网关后生效</span>'}`;
   $('#save').onclick = save;
+  if ($('#restart')) $('#restart').onclick = () => desktop.restartGateway();
   if ($('#reload')) $('#reload').onclick = reload;
 }
 
@@ -557,6 +590,15 @@ async function start() {
   if (cfg().gateways?.[0]?.downstreams?.length) state.sel = { kind: 'ds', gw: 0, ds: 0 };
   render();
   subscribeEvents();
+  if (desktop) {
+    desktop.onView((view) => { state.view = view; renderEditor(); });
+    state.output = await desktop.getOutput();
+    desktop.onOutput((line) => {
+      state.output.push(line);
+      if (state.output.length > 500) state.output.shift();
+      renderOutput();
+    });
+  }
   pollMetrics();
   setInterval(pollMetrics, 1000);
   let wide = isWide();

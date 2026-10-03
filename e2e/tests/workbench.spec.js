@@ -191,3 +191,10 @@ test('Ctrl+S saves, and the toolbar names the actual config file', async ({ page
   await expect(page.getByRole('banner')).toContainText('已保存，重启网关后生效');
   expect(gateway.readConfig()).toContain('slave_ids: "103"');
 });
+
+test('the browser console has no desktop-only controls', async ({ page, gateway }) => {
+  await page.goto(gateway.url);
+  await expect(page.getByRole('tab', { name: '请求日志' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '网关输出' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /重启网关/ })).toHaveCount(0);
+});
