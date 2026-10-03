@@ -312,7 +312,14 @@ func startUI(cfg config.UIConfig, token string, announce bool, deps api.Deps) *h
 		os.Exit(1)
 	}
 	actual := ln.Addr().String()
-	srv := &http.Server{Handler: api.Guard(api.NewHandler(deps), token, api.IsLoopbackAddr(actual))}
+	// Requests derive from serverCtx, canceled on Shutdown, so long-lived
+	// event streams end at once instead of holding shutdown to its timeout.
+	serverCtx, cancelRequests := context.WithCancel(context.Background())
+	srv := &http.Server{
+		Handler:     api.Guard(api.NewHandler(deps), token, api.IsLoopbackAddr(actual)),
+		BaseContext: func(net.Listener) context.Context { return serverCtx },
+	}
+	srv.RegisterOnShutdown(cancelRequests)
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			slog.Error("Management API stopped", "addr", actual, "err", err)

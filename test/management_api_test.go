@@ -268,3 +268,25 @@ func TestSidecar_ExitsGracefullyWhenStdinCloses(t *testing.T) {
 		t.Errorf("after restart: register 7 = %v (err %v), want 4321", got, err)
 	}
 }
+
+func TestSidecar_OpenEventStreamDoesNotDelayShutdown(t *testing.T) {
+	sc := startSidecar(t, managementConfig(freePort(t), ""), nil, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof")
+	resp, err := http.Get("http://" + sc.addr + "/api/v1/events") // a console tab left open
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	start := time.Now()
+	sc.stdin.Close()
+	exited := make(chan error, 1)
+	go func() { exited <- sc.cmd.Wait() }()
+	select {
+	case <-exited:
+		if d := time.Since(start); d > time.Second {
+			t.Errorf("shutdown took %v with an event stream open, want < 1s", d)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("still running 5s after stdin closed")
+	}
+}
