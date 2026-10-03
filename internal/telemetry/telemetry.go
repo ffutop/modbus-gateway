@@ -9,6 +9,7 @@ package telemetry
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -31,7 +32,8 @@ type Event struct {
 }
 
 // Recorder accumulates Events. It is safe for concurrent use and never
-// blocks the caller for longer than a map lookup.
+// blocks the caller for longer than a map lookup. A nil *Recorder records
+// nothing and reports no events, so readers need no nil checks.
 type Recorder struct {
 	capacity int
 	seq      atomic.Uint64
@@ -87,15 +89,56 @@ func (r *Recorder) Record(e Event) {
 	g.ringMu.Unlock()
 }
 
-// recent returns the buffered events, oldest first.
-func (g *gatewayStats) recent() []Event {
+// newerThan returns the buffered events with Seq > seq, oldest first. It
+// walks back from the newest event and stops at the first older one, so a
+// poll with nothing new copies nothing.
+func (g *gatewayStats) newerThan(seq uint64) []Event {
 	g.ringMu.Lock()
 	defer g.ringMu.Unlock()
-	if !g.full {
-		return append([]Event(nil), g.ring[:g.next]...)
+	n := g.next
+	if g.full {
+		n = len(g.ring)
 	}
-	return append(append([]Event(nil), g.ring[g.next:]...), g.ring[:g.next]...)
+	var out []Event
+	for k := 1; k <= n; k++ {
+		e := g.ring[(g.next-k+len(g.ring))%len(g.ring)]
+		if e.Seq <= seq {
+			break
+		}
+		out = append(out, e)
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
 }
+
+// latencies returns the durations of the buffered events, sorted, for the
+// gateway as a whole and per downstream, in one pass over the buffer.
+func (g *gatewayStats) latencies() (all []time.Duration, byDownstream map[string][]time.Duration) {
+	g.ringMu.Lock()
+	n := g.next
+	if g.full {
+		n = len(g.ring)
+	}
+	all = make([]time.Duration, 0, n)
+	byDownstream = make(map[string][]time.Duration)
+	for _, e := range g.ring[:n] {
+		all = append(all, e.Duration)
+		if e.Downstream != "" {
+			byDownstream[e.Downstream] = append(byDownstream[e.Downstream], e.Duration)
+		}
+	}
+	g.ringMu.Unlock()
+
+	sortDurations(all)
+	for _, d := range byDownstream {
+		sortDurations(d)
+	}
+	return all, byDownstream
+}
+
+func sortDurations(d []time.Duration) { slices.Sort(d) }
 
 func (r *Recorder) gateway(name string) *gatewayStats {
 	r.mu.RLock()
@@ -132,15 +175,14 @@ func (g *gatewayStats) downstream(name string) *counters {
 // Since returns the buffered events with Seq greater than seq, across all
 // gateways, in Seq order. Events already overwritten are skipped.
 func (r *Recorder) Since(seq uint64) []Event {
+	if r == nil {
+		return nil
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var out []Event
 	for _, g := range r.gateways {
-		for _, e := range g.recent() {
-			if e.Seq > seq {
-				out = append(out, e)
-			}
-		}
+		out = append(out, g.newerThan(seq)...)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
@@ -165,15 +207,18 @@ type GatewayMetrics struct {
 
 // Metrics returns a snapshot of every gateway seen so far, sorted by name.
 func (r *Recorder) Metrics() []GatewayMetrics {
+	if r == nil {
+		return []GatewayMetrics{}
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]GatewayMetrics, 0, len(r.gateways))
 	for name, g := range r.gateways {
-		recent := g.recent()
-		gm := GatewayMetrics{Counts: g.snapshot(name, recent, ""), Downstreams: []Counts{}}
+		all, byDownstream := g.latencies()
+		gm := GatewayMetrics{Counts: g.snapshot(name, all), Downstreams: []Counts{}}
 		g.mu.RLock()
 		for dname, c := range g.downstreams {
-			gm.Downstreams = append(gm.Downstreams, c.snapshot(dname, recent, dname))
+			gm.Downstreams = append(gm.Downstreams, c.snapshot(dname, byDownstream[dname]))
 		}
 		g.mu.RUnlock()
 		sort.Slice(gm.Downstreams, func(i, j int) bool { return gm.Downstreams[i].Name < gm.Downstreams[j].Name })
@@ -183,16 +228,8 @@ func (r *Recorder) Metrics() []GatewayMetrics {
 	return out
 }
 
-// snapshot reads c and computes percentiles over recent events, restricted
-// to one downstream unless downstream is empty.
-func (c *counters) snapshot(name string, recent []Event, downstream string) Counts {
-	var durations []time.Duration
-	for _, e := range recent {
-		if downstream == "" || e.Downstream == downstream {
-			durations = append(durations, e.Duration)
-		}
-	}
-	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
+// snapshot reads c, with percentiles over the given sorted recent durations.
+func (c *counters) snapshot(name string, durations []time.Duration) Counts {
 	return Counts{
 		Name:     name,
 		Requests: c.requests.Load(),

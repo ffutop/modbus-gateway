@@ -5,6 +5,7 @@
 package telemetry
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -49,5 +50,27 @@ func TestMetrics_PercentilesOnlyCoverTheLastCapacityEvents(t *testing.T) {
 	}
 	if g.P99Ms != 1 {
 		t.Errorf("p99 = %v ms, want 1: the 1s events were overwritten", g.P99Ms)
+	}
+}
+
+func TestSince_ReturnsNewerEventsAcrossGatewaysInOrder(t *testing.T) {
+	r := NewRecorder(3)
+	for i := 0; i < 5; i++ { // gw-a keeps only its last 3 (seq 5,7,9)
+		r.Record(Event{Gateway: "gw-a", SlaveID: byte(i)})
+		r.Record(Event{Gateway: "gw-b", SlaveID: byte(i)})
+	}
+	all := r.Since(0)
+	var seqs []uint64
+	for _, e := range all {
+		seqs = append(seqs, e.Seq)
+	}
+	if fmt.Sprint(seqs) != "[5 6 7 8 9 10]" {
+		t.Fatalf("Since(0) seqs = %v, want the 3 kept per gateway in order", seqs)
+	}
+	if got := r.Since(8); len(got) != 2 || got[0].Seq != 9 || got[1].Seq != 10 {
+		t.Errorf("Since(8) = %+v, want seq 9 and 10", got)
+	}
+	if got := r.Since(10); len(got) != 0 {
+		t.Errorf("Since(10) = %+v, want nothing", got)
 	}
 }
