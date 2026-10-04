@@ -5,6 +5,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,6 +30,10 @@ type eventView struct {
 	Quantity     uint16  `json:"quantity"`
 	DurationMs   float64 `json:"duration_ms"`
 	Error        string  `json:"error,omitempty"`
+	// Request and Response are the PDUs in hex, function code first;
+	// Response is empty when the request failed.
+	Request  string `json:"request"`
+	Response string `json:"response,omitempty"`
 }
 
 // streamEvents sends the buffered requests, then every new batch, as SSE
@@ -56,6 +61,7 @@ func streamEvents(w http.ResponseWriter, r *http.Request, rec *telemetry.Recorde
 					Seq: e.Seq, Time: e.Time.Format(time.RFC3339Nano), Gateway: e.Gateway, Downstream: e.Downstream,
 					Source: e.Source, SlaveID: e.SlaveID, FunctionCode: e.FunctionCode, Address: e.Address,
 					Quantity: e.Quantity, DurationMs: float64(e.Duration) / float64(time.Millisecond),
+					Request: hex.EncodeToString(e.Request), Response: hex.EncodeToString(e.Response),
 				}
 				if e.Err != nil {
 					batch[i].Error = e.Err.Error()

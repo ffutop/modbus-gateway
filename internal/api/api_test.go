@@ -62,6 +62,9 @@ func TestStatus_ReportsVersionConfigPathAndSimulations(t *testing.T) {
 		Version:     "0.6.0-test",
 		ConfigPath:  "/etc/modbusgw/config.yaml",
 		Simulations: []*simulation.Simulation{sim},
+		Upstreams: func() []gateway.UpstreamStatus {
+			return []gateway.UpstreamStatus{{Gateway: "business", Index: 1, State: gateway.UpstreamFailed, Error: "address in use"}}
+		},
 	})
 
 	var got struct {
@@ -72,8 +75,12 @@ func TestStatus_ReportsVersionConfigPathAndSimulations(t *testing.T) {
 			Status  string `json:"status"`
 			Version uint64 `json:"version"`
 		} `json:"simulations"`
+		Upstreams []gateway.UpstreamStatus `json:"upstreams"`
 	}
 	getJSON(t, h, "/api/v1/status", &got)
+	if want := (gateway.UpstreamStatus{Gateway: "business", Index: 1, State: gateway.UpstreamFailed, Error: "address in use"}); len(got.Upstreams) != 1 || got.Upstreams[0] != want {
+		t.Errorf("upstreams = %+v, want [%+v]", got.Upstreams, want)
+	}
 
 	if got.Version != "0.6.0-test" || got.ConfigPath != "/etc/modbusgw/config.yaml" {
 		t.Errorf("process info = %q, %q", got.Version, got.ConfigPath)
@@ -181,6 +188,8 @@ type sseEvent struct {
 	Quantity     int     `json:"quantity"`
 	DurationMs   float64 `json:"duration_ms"`
 	Error        string  `json:"error"`
+	Request      string  `json:"request"`
+	Response     string  `json:"response"`
 }
 
 // readSSEBatches reads `data:` lines from an SSE response until want events
@@ -249,6 +258,12 @@ func TestEvents_StreamsEachRequestWithRouteAndRange(t *testing.T) {
 	}
 	if noRoute.SlaveID != 42 || noRoute.Downstream != "" || noRoute.Error == "" {
 		t.Errorf("no-route event = %+v, want slave 42 with an error and no downstream", noRoute)
+	}
+	if first.Request != "0300000001" || first.Response != "03020000" {
+		t.Errorf("read PDUs = %q / %q, want 0300000001 / 03020000", first.Request, first.Response)
+	}
+	if noRoute.Request != "0300000001" || noRoute.Response != "" {
+		t.Errorf("no-route PDUs = %q / %q, want the request and no response", noRoute.Request, noRoute.Response)
 	}
 	if !(first.Seq < write.Seq && write.Seq < noRoute.Seq) {
 		t.Errorf("seq not increasing: %d %d %d", first.Seq, write.Seq, noRoute.Seq)

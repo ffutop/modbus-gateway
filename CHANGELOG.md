@@ -12,10 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native desktop app preview (`desktop-native/`, Gio): runs gateways in-process with a desktop menu, link topology, request/register monitoring and visual/YAML configuration editing. Validated saves detect external changes and retain drafts on failure; saved configuration takes effect after restarting the app. A separate Go module needs Go 1.24+; the root module stays on Go 1.21.
 - macOS application bundle packaging with a geometric ModMux icon, private first-launch configuration, user-directory logs and bundled Go/Noto Sans SC fonts.
 - Telemetry events now carry the raw request and response PDUs.
+- Management API: `/api/v1/events` includes each request's `request` and `response` PDUs in hex, and `/api/v1/status` lists every upstream listener's state (`starting`, `listening`, `failed` with its error, or `stopped`).
 
 ### Changed
 
 - Gateway assembly moved from `main.go` to `internal/app`, and the command itself to `internal/cli`, so the desktop app runs exactly the CLI as its child process. Flags and startup behavior are unchanged.
+- With `-exit-on-stdin-eof`, the gateway ignores SIGPIPE: when its parent exits and no one reads its output any more, it still completes the graceful shutdown and flushes persistence instead of being killed while logging.
 - Console and native desktop app now share one set of design tokens generated from `design/tokens.json` (see `design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast; the rest of the look is unchanged.
 
 ## [0.5.0] - 2026-09-19

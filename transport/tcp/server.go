@@ -20,6 +20,7 @@ import (
 type Server struct {
 	Address string
 	Handler transport.RequestHandler
+	transport.Readiness
 
 	listener net.Listener
 }
@@ -40,6 +41,7 @@ func (s *Server) Start(ctx context.Context, handler transport.RequestHandler) er
 	}
 	s.listener = listener
 	slog.Info("Modbus TCP server listening", "addr", s.Address)
+	s.SetReady()
 
 	go func() {
 		<-ctx.Done()

@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/ffutop/modbus-gateway/internal/config"
+	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
@@ -33,6 +34,8 @@ type Deps struct {
 	RunningConfig   *config.Config
 	Simulations     []*simulation.Simulation
 	Telemetry       *telemetry.Recorder
+	// Upstreams reports the listeners' states; nil reports none.
+	Upstreams func() []gateway.UpstreamStatus
 	// Static is the console front end, served at "/".
 	Static   fs.FS
 	identity *runtimeIdentity
@@ -62,11 +65,16 @@ func NewHandler(d Deps) http.Handler {
 		for _, s := range d.Simulations {
 			sims = append(sims, simStatus{Name: s.Name, Status: string(s.Status()), Version: s.Version()})
 		}
+		upstreams := []gateway.UpstreamStatus{}
+		if d.Upstreams != nil {
+			upstreams = append(upstreams, d.Upstreams()...)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"version":          d.Version,
 			"startup_revision": d.StartupRevision,
 			"config_path":      d.ConfigPath,
 			"simulations":      sims,
+			"upstreams":        upstreams,
 		})
 	}))
 	mux.HandleFunc("/api/v1/metrics", get(func(w http.ResponseWriter, r *http.Request) {

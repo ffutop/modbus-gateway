@@ -270,6 +270,58 @@ func TestSidecar_ExitsGracefullyWhenStdinCloses(t *testing.T) {
 	}
 }
 
+// When the parent dies, nobody reads the sidecar's output any more and the
+// OS closes its stdin. Logging the shutdown must not kill it with SIGPIPE
+// before persistence is flushed.
+func TestSidecar_ShutsDownGracefullyAfterTheParentDied(t *testing.T) {
+	modbusPort := freePort(t)
+	mmapPath := filepath.Join(t.TempDir(), "sim.bin")
+	cfg := strings.Replace(managementConfig(modbusPort, ""), "persistence: { type: memory }",
+		fmt.Sprintf("persistence: { type: mmap, path: %q }", mmapPath), 1)
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configFile, []byte(cfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(gatewayBinaryPath, "-config", configFile, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof")
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() && !strings.Contains(scanner.Text(), "ui_ready") {
+	}
+	handler, client := newModbusClient(modbusPort, 100)
+	if _, err := client.WriteSingleRegister(7, 4321); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	handler.Close()
+
+	stdout.Close() // the parent is gone: its read ends close,
+	stderr.Close()
+	stdin.Close() // and so does the sidecar's stdin
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	select {
+	case err := <-exited:
+		if err != nil {
+			t.Fatalf("exit: %v, want status 0 (a signal means the shutdown was cut short)", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("still running 5s after stdin closed")
+	}
+
+	startSidecar(t, cfg, nil, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof")
+	handler, client = newModbusClient(modbusPort, 100)
+	defer handler.Close()
+	got, err := client.ReadHoldingRegisters(7, 1)
+	if err != nil || len(got) != 2 || int(got[0])<<8|int(got[1]) != 4321 {
+		t.Errorf("after restart: register 7 = %v (err %v), want 4321", got, err)
+	}
+}
+
 func TestSidecar_OpenEventStreamDoesNotDelayShutdown(t *testing.T) {
 	sc := startSidecar(t, managementConfig(freePort(t), ""), nil, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof")
 	resp, err := http.Get("http://" + sc.addr + "/api/v1/events") // a console tab left open

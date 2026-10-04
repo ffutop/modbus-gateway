@@ -202,6 +202,15 @@ func (a *App) Close() {
 }
 
 // SortedSimulations returns the simulations ordered by name.
+// UpstreamStatuses reports every upstream of every started gateway.
+func (a *App) UpstreamStatuses() []gateway.UpstreamStatus {
+	var out []gateway.UpstreamStatus
+	for _, gw := range a.Gateways {
+		out = append(out, gw.UpstreamStatuses()...)
+	}
+	return out
+}
+
 func (a *App) SortedSimulations() []*simulation.Simulation {
 	sims := make([]*simulation.Simulation, 0, len(a.Simulations))
 	for _, s := range a.Simulations {

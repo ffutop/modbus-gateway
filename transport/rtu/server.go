@@ -22,6 +22,7 @@ import (
 type Server struct {
 	Config config.SerialConfig
 	Serial serialPort
+	transport.Readiness
 }
 
 // NewServer creates a new RTU Server.
@@ -48,6 +49,7 @@ func (s *Server) Start(ctx context.Context, handler transport.RequestHandler) er
 	}
 	defer port.Close()
 	slog.Info("RTU Server listening", "device", s.Config.Device)
+	s.SetReady()
 
 	go func() {
 		<-ctx.Done()

@@ -95,6 +95,7 @@ func Main(version string, args []string) {
 		RunningConfig:   cfg,
 		Simulations:     rt.SortedSimulations(),
 		Telemetry:       recorder,
+		Upstreams:       rt.UpstreamStatuses,
 		Static:          web.Assets,
 	})
 
@@ -106,6 +107,10 @@ func Main(version string, args []string) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	if *exitOnStdinEOF {
+		// The parent reads our output. Once it is gone, a log line written
+		// during shutdown must fail with EPIPE instead of killing us with
+		// SIGPIPE before persistence is flushed.
+		signal.Ignore(syscall.SIGPIPE)
 		go func() {
 			io.Copy(io.Discard, os.Stdin)
 			close(stdinClosed)

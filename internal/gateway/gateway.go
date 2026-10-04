@@ -30,6 +30,56 @@ type Gateway struct {
 	Telemetry *telemetry.Recorder
 	// DownstreamNames labels downstreams in telemetry events.
 	DownstreamNames map[transport.Downstream]string
+
+	statusMu  sync.Mutex
+	upstreams []UpstreamStatus // nil until Start
+}
+
+// UpstreamState is where an upstream is in its lifecycle. Failed and stopped
+// are final: an upstream is not restarted.
+type UpstreamState string
+
+const (
+	UpstreamStarting  UpstreamState = "starting"
+	UpstreamListening UpstreamState = "listening"
+	UpstreamFailed    UpstreamState = "failed"
+	UpstreamStopped   UpstreamState = "stopped"
+)
+
+// UpstreamStatus reports one upstream, identified by its index in the
+// gateway's configured upstreams.
+type UpstreamStatus struct {
+	Gateway string        `json:"gateway"`
+	Index   int           `json:"index"`
+	State   UpstreamState `json:"state"`
+	Error   string        `json:"error,omitempty"`
+}
+
+// UpstreamStatuses returns every upstream's current state.
+func (g *Gateway) UpstreamStatuses() []UpstreamStatus {
+	g.statusMu.Lock()
+	defer g.statusMu.Unlock()
+	out := make([]UpstreamStatus, len(g.Upstreams))
+	for i := range out {
+		out[i] = UpstreamStatus{Gateway: g.Name, Index: i, State: UpstreamStarting}
+		if i < len(g.upstreams) {
+			out[i] = g.upstreams[i]
+		}
+	}
+	return out
+}
+
+func (g *Gateway) setUpstream(idx int, state UpstreamState, err error) {
+	g.statusMu.Lock()
+	defer g.statusMu.Unlock()
+	s := &g.upstreams[idx]
+	if s.State == UpstreamFailed || s.State == UpstreamStopped {
+		return
+	}
+	s.State, s.Error = state, ""
+	if err != nil {
+		s.Error = err.Error()
+	}
 }
 
 // NewGateway creates a new Gateway instance
@@ -69,14 +119,35 @@ func (g *Gateway) Start(ctx context.Context) error {
 	}
 
 	// Start Upstreams
+	g.statusMu.Lock()
+	g.upstreams = make([]UpstreamStatus, len(g.Upstreams))
+	for i := range g.upstreams {
+		g.upstreams[i] = UpstreamStatus{Gateway: g.Name, Index: i, State: UpstreamStarting}
+	}
+	g.statusMu.Unlock()
 	var wg sync.WaitGroup
 	for i, us := range g.Upstreams {
 		wg.Add(1)
 		go func(ups transport.Upstream, idx int) {
 			defer wg.Done()
+			returned := make(chan struct{})
+			if r, ok := ups.(transport.ReadyReporter); ok {
+				go func() {
+					select {
+					case <-r.Ready():
+						g.setUpstream(idx, UpstreamListening, nil)
+					case <-returned:
+					}
+				}()
+			}
 			slog.Info("Starting upstream", "gateway", g.Name, "index", idx)
-			if err := ups.Start(ctx, g.handleRequest); err != nil {
+			err := ups.Start(ctx, g.handleRequest)
+			close(returned)
+			if err != nil {
 				slog.Error("Upstream stopped with error", "gateway", g.Name, "index", idx, "err", err)
+				g.setUpstream(idx, UpstreamFailed, err)
+			} else {
+				g.setUpstream(idx, UpstreamStopped, nil)
 			}
 		}(us, i)
 	}

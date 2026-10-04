@@ -22,6 +22,7 @@ import (
 type Server struct {
 	Address  string
 	listener net.Listener
+	transport.Readiness
 }
 
 // NewServer creates a new RTU over TCP Server.
@@ -39,6 +40,7 @@ func (s *Server) Start(ctx context.Context, handler transport.RequestHandler) er
 	}
 	s.listener = listener
 	slog.Info("RTU over TCP server listening", "addr", s.Address)
+	s.SetReady()
 
 	go func() {
 		<-ctx.Done()

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 	"github.com/ffutop/modbus-gateway/modbus"
@@ -51,5 +52,60 @@ func TestHandleRequestRecordsRawPDUs(t *testing.T) {
 	}
 	if events[1].Err == nil || events[1].Response != nil {
 		t.Errorf("failed request: err = %v, response = % x; want an error and no response", events[1].Err, events[1].Response)
+	}
+}
+
+// fakeUpstream becomes ready, or fails with err, then serves until ctx ends.
+type fakeUpstream struct {
+	transport.Readiness
+	err error
+}
+
+func (f *fakeUpstream) Start(ctx context.Context, _ transport.RequestHandler) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.SetReady()
+	<-ctx.Done()
+	return nil
+}
+func (f *fakeUpstream) Close() error { return nil }
+
+func waitStates(t *testing.T, g *Gateway, want ...UpstreamState) []UpstreamStatus {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := g.UpstreamStatuses()
+		match := len(got) == len(want)
+		for i := 0; match && i < len(got); i++ {
+			match = got[i].State == want[i]
+		}
+		if match {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("upstream states = %+v, want %v", got, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestUpstreamStatusesFollowTheListenerLifecycle(t *testing.T) {
+	g := NewGateway("gw", []transport.Upstream{&fakeUpstream{}, &fakeUpstream{err: errors.New("address in use")}}, nil, &fakeDownstream{})
+	waitStates(t, g, UpstreamStarting, UpstreamStarting)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { g.Start(ctx); close(done) }()
+	got := waitStates(t, g, UpstreamListening, UpstreamFailed)
+	if got[1].Error != "address in use" || got[1].Gateway != "gw" || got[1].Index != 1 {
+		t.Errorf("failed upstream = %+v", got[1])
+	}
+
+	cancel()
+	<-done
+	got = waitStates(t, g, UpstreamStopped, UpstreamFailed)
+	if got[1].Error != "address in use" {
+		t.Errorf("a failure must stay reported after shutdown: %+v", got[1])
 	}
 }
