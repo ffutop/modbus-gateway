@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 网关装配逻辑从 `main.go` 移至 `internal/app`，命令本身移至 `internal/cli`，桌面版的子进程运行的正是命令行版；参数与启动行为不变。
 - 使用 `-exit-on-stdin-eof` 时网关忽略 SIGPIPE：父进程退出、输出无人读取后，仍会完成正常关闭并刷写持久化数据，而不会在写日志时被终止。
-- 原生桌面版的颜色、字号与圆角由 `design/tokens.json` 生成（见 `design/README.md`）。状态文字使用更深的绿色和红色，徽标与结果文字达到 WCAG AA 对比度。
+- 原生桌面版的颜色、字号与圆角由 `desktop-native/design/tokens.json` 生成（见 `desktop-native/design/README.md`）。状态文字使用更深的绿色和红色，徽标与结果文字达到 WCAG AA 对比度。
 
 ## [0.5.0] - 2026-09-19
 

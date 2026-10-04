@@ -7,7 +7,6 @@ require (
 	github.com/grid-x/serial v0.0.0-20211107191517-583c7356b3aa
 	github.com/spf13/cast v1.6.0
 	github.com/spf13/viper v1.18.2
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -29,4 +28,5 @@ require (
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

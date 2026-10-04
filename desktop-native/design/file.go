@@ -12,7 +12,7 @@ import (
 	"sort"
 )
 
-// Source is the token source file, relative to the repository root.
+// Source is the token source file, relative to the desktop-native module root.
 const Source = "design/tokens.json"
 
 // File returns t as tokens.json in its canonical layout: one entry per line,

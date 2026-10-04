@@ -66,6 +66,7 @@ cd desktop-native
 | `main.go` | 带 `--sidecar` 时作为网关子进程运行 `internal/cli`；否则加载配置、启动网关子进程，驱动窗口事件循环，网关重启后按配置文件重建工作台 |
 | `internal/sidecar` | 子进程启动／停止／崩溃检测（`Supervisor`）与管理 API 客户端（后台缓存事件、寄存器窗口与监听状态） |
 | `internal/live` | 工作台读取的数据源（`Source`）与进程状态（`Runtime`）接口；`Local` 为测试用的进程内实现 |
+| `design` | 设计令牌唯一来源 `tokens.json`、对比度规则与生成器；规范见 [design/README.md](design/README.md) |
 | `internal/workspace` | 唯一界面：菜单、拓扑、链路／请求／模型联动、配置编辑；仅投影真实运行数据。`tokens_gen.go` 由 `go generate ./design` 生成 |
 | `internal/configfile` | 原文配置读取、校验、版本冲突检测及原子保存 |
 | `internal/launch` | 应用包启动的用户配置、工作目录与日志路径 |

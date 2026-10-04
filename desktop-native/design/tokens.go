@@ -184,11 +184,12 @@ func (t *Tokens) hex(ref string) string {
 	panic("unvalidated palette ref " + ref)
 }
 
-// DesktopNative is the generated file's path, relative to the repository root.
-const DesktopNative = "desktop-native/internal/workspace/tokens_gen.go"
+// DesktopNative is the generated file's path, relative to the desktop-native
+// module root.
+const DesktopNative = "internal/workspace/tokens_gen.go"
 
 // Render returns every generated file, keyed by its path relative to the
-// repository root.
+// module root.
 func (t *Tokens) Render() map[string][]byte {
 	return map[string][]byte{DesktopNative: t.gio()}
 }

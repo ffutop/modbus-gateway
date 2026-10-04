@@ -4,7 +4,7 @@
 
 // Command gentokens writes the files generated from design/tokens.json and
 // rewrites tokens.json in its canonical layout. Run it through
-// `go generate ./design` from the repository root.
+// `go generate ./design` from the desktop-native module root.
 package main
 
 import (
@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ffutop/modbus-gateway/design"
+	"github.com/ffutop/modbus-gateway/desktop-native/design"
 )
 
 func main() {

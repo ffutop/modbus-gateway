@@ -22,7 +22,7 @@ func load(t *testing.T) *Tokens {
 	return tok
 }
 
-// root is the repository root; tests run in the design package directory.
+// root is the module root; tests run in the design package directory.
 func root(rel string) string {
 	return filepath.Join("..", filepath.FromSlash(rel))
 }
@@ -33,11 +33,6 @@ func root(rel string) string {
 func TestGeneratedUpToDate(t *testing.T) {
 	for path, want := range load(t).Render() {
 		got, err := os.ReadFile(root(path))
-		if os.IsNotExist(err) {
-			if _, derr := os.Stat(filepath.Dir(root(path))); os.IsNotExist(derr) {
-				continue // module not present in this checkout
-			}
-		}
 		if err != nil {
 			t.Errorf("%s: %v (run `go generate ./design`)", path, err)
 			continue
@@ -54,15 +49,15 @@ var goColor = regexp.MustCompile(`\brgb\(0x[0-9a-fA-F]+\)|color\.NRGBA\{R:\s*0x`
 // TestNoRawColors keeps every color in the desktop UI flowing from the tokens.
 func TestNoRawColors(t *testing.T) {
 	var files []string
-	native, _ := filepath.Glob(root("desktop-native/internal/workspace/*.go"))
+	native, _ := filepath.Glob(root("internal/workspace/*.go"))
 	for _, f := range native {
 		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, "tokens_gen.go") {
 			continue
 		}
-		files = append(files, "desktop-native/internal/workspace/"+filepath.Base(f))
+		files = append(files, "internal/workspace/"+filepath.Base(f))
 	}
 	if len(files) == 0 {
-		t.Skip("desktop-native not present in this checkout")
+		t.Fatal("no workspace sources found")
 	}
 	for _, rel := range files {
 		data, err := os.ReadFile(root(rel))

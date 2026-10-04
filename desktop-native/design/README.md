@@ -4,9 +4,9 @@ ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营�
 
 | 界面 | 位置 | 令牌文件（生成，勿手改） |
 |---|---|---|
-| Gio 原生桌面版 | `desktop-native/internal/workspace` | `desktop-native/internal/workspace/tokens_gen.go` |
+| Gio 原生桌面版 | `internal/workspace` | `internal/workspace/tokens_gen.go` |
 
-**唯一来源是 `design/tokens.json`。** 编辑 `tokens.json` 后运行 `go generate ./design`，提交 `tokens.json` 和生成的文件。效果用原生版的离屏截图测试查看（见“守卫”）。
+**唯一来源是 `desktop-native/design/tokens.json`。** 编辑 `tokens.json` 后在 `desktop-native` 目录运行 `go generate ./design`，提交 `tokens.json` 和生成的文件。效果用原生版的离屏截图测试查看（见“守卫”）。
 
 语义颜色、字号和圆角的**名称**会被代码引用；增删名称时同步修改代码。
 
@@ -103,10 +103,10 @@ ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营�
 
 ## 守卫
 
-以下检查都在根模块中，CI 的 `go test ./...` 会运行：
+以下检查都在 desktop-native 模块中，CI 的 desktop-native 任务（`go test ./...`）会运行：
 
 - `TestGeneratedUpToDate`：生成文件与 `tokens.json` 不一致时失败。
-- `TestNoRawColors`：`desktop-native/internal/workspace` 中出现裸色值（`rgb(0x…)`、`color.NRGBA{R: 0x…}`）时失败。
+- `TestNoRawColors`：`internal/workspace` 中出现裸色值（`rgb(0x…)`、`color.NRGBA{R: 0x…}`）时失败。
 - `TestContrastRules`：对比度规则未达标时失败。
 - `TestFileRoundTrip`：`tokens.json` 不是固定格式时失败（运行 `go generate ./design` 即可修正）。
 - `tokens.json` 本身会校验：命名必须是 kebab-case、不允许未知字段、色板条目必须被引用。
