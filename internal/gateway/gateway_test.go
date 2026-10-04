@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 )
 
 type fakeDownstream struct {

@@ -20,12 +20,12 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
-	"github.com/ffutop/modbus-gateway/transport"
-	"github.com/ffutop/modbus-gateway/transport/injector"
-	"github.com/ffutop/modbus-gateway/transport/local"
-	"github.com/ffutop/modbus-gateway/transport/rtu"
-	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
-	"github.com/ffutop/modbus-gateway/transport/tcp"
+	"github.com/ffutop/modbus-gateway/internal/transport"
+	"github.com/ffutop/modbus-gateway/internal/transport/injector"
+	"github.com/ffutop/modbus-gateway/internal/transport/local"
+	"github.com/ffutop/modbus-gateway/internal/transport/rtu"
+	rtuovertcp "github.com/ffutop/modbus-gateway/internal/transport/rtu-over-tcp"
+	"github.com/ffutop/modbus-gateway/internal/transport/tcp"
 )
 
 // App is the assembled runtime: open simulations and ready-to-start

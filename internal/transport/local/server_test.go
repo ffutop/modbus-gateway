@@ -9,9 +9,9 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
-	"github.com/ffutop/modbus-gateway/modbus"
 )
 
 func newTestSlave(t *testing.T) (*Client, *simulation.Simulation) {

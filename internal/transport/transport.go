@@ -7,7 +7,7 @@ package transport
 import (
 	"context"
 
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 // RequestHandler handles a Modbus request/response cycle.

@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 const (

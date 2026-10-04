@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 func TestClient_Send(t *testing.T) {

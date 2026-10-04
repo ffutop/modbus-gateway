@@ -7,9 +7,9 @@ Modbus 协议转换与路由网关（Go）。一个进程内运行多个 gateway
 - `main.go`：入口，只调用 `internal/cli`；命令本体（装配配置、模拟模型、gateway、管理 API `-ui-listen` 与 pprof）在 `internal/cli`，桌面版子进程运行的也是它。
 - `internal/config`：配置加载与校验。v0（无 `version` 或 `version: 0`）与 v1（`version: 1`，顶层 `simulations` + `simulation.ref`）两套解析规则并存。
 - `internal/gateway`：按 Slave ID 转发；`internal/routing`：Slave ID 表达式解析。
-- `internal/simulation`（含 `model` 与 `persistence`：memory / file / mmap / sql）：共享模拟模型、持久化与写入审计；`local`、`injector` 下游在 `transport/local`、`transport/injector` 中把 Modbus 请求翻译为对模型的读写。
+- `internal/simulation`（含 `model` 与 `persistence`：memory / file / mmap / sql）：共享模拟模型、持久化与写入审计；`local`、`injector` 下游在 `internal/transport/local`、`internal/transport/injector` 中把 Modbus 请求翻译为对模型的读写。
 - `internal/api`、`internal/telemetry`：管理 HTTP API（status、events、registers，供桌面版子进程模式读取）与运行指标。没有浏览器控制台。
-- `transport/*`：`transport.Upstream` / `transport.Downstream` 的各协议实现；`modbus/*`：PDU、RTU 帧与 CRC。
+- `internal/transport/*`：`transport.Upstream` / `transport.Downstream` 的各协议实现；`internal/modbus/*`：PDU、RTU 帧与 CRC。网关不作为库对外提供，代码都在 `internal/` 下。
 - `desktop-native/`：唯一的桌面实现（Gio，独立 Go 模块，需 Go 1.24+，经 `replace` 引用根模块）。Electron 外壳已移除。网关以子进程运行：同一可执行文件带 `--sidecar` 启动自身，经根模块的 sidecar 协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）和管理 API 通信（`internal/sidecar`）；改动该协议或 `/api/v1/events`、`/api/v1/status` 时同步原生版客户端。
 - `desktop-native/design/`：设计令牌唯一来源 `tokens.json`、规范 `README.md` 与生成器；在 `desktop-native` 中运行 `go generate ./design` 生成 `internal/workspace/tokens_gen.go`。
 - `test/`：独立 Go 模块的端到端测试；`docs/`：GitHub Pages 站点、原型与 `docs/superpowers/specs/` 下的设计/PRD。

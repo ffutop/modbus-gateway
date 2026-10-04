@@ -7,7 +7,7 @@ package tcp
 import (
 	"fmt"
 
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 const (

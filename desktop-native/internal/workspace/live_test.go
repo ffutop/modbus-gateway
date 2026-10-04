@@ -16,9 +16,9 @@ import (
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 	gwapp "github.com/ffutop/modbus-gateway/internal/app"
 	"github.com/ffutop/modbus-gateway/internal/config"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport/tcp"
+	"github.com/ffutop/modbus-gateway/internal/transport/tcp"
 )
 
 func liveConfig(address string) string {

@@ -8,10 +8,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
-	"github.com/ffutop/modbus-gateway/modbus"
 )
 
 func newTestInjector(t *testing.T, mappings []mapping) (*Client, *simulation.Simulation) {

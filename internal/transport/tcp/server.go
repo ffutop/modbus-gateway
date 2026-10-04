@@ -12,8 +12,8 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 )
 
 // Server implements a Modbus TCP Server.

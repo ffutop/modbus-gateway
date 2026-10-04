@@ -8,8 +8,8 @@ import (
 	"context"
 	"encoding/binary"
 
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 )
 
 // Send executes the request's function code against the shared simulation

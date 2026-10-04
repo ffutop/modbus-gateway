@@ -18,8 +18,8 @@ import (
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 	"github.com/ffutop/modbus-gateway/internal/cli"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport/tcp"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/transport/tcp"
 )
 
 // The test binary doubles as the gateway child, as the app binary does.

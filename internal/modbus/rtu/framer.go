@@ -11,7 +11,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 var ErrRequestTimedOut = errors.New("modbus: request timed out")

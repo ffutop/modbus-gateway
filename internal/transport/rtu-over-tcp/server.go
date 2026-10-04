@@ -12,9 +12,9 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/ffutop/modbus-gateway/modbus"
-	rtupacket "github.com/ffutop/modbus-gateway/modbus/rtu"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	rtupacket "github.com/ffutop/modbus-gateway/internal/modbus/rtu"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 )
 
 // Server implements a Modbus RTU over TCP Server.

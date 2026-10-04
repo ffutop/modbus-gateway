@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/gateway"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport"
-	"github.com/ffutop/modbus-gateway/transport/local"
-	"github.com/ffutop/modbus-gateway/transport/tcp"
+	"github.com/ffutop/modbus-gateway/internal/transport"
+	"github.com/ffutop/modbus-gateway/internal/transport/local"
+	"github.com/ffutop/modbus-gateway/internal/transport/tcp"
 )
 
 func openSim(t *testing.T, name string) *simulation.Simulation {
