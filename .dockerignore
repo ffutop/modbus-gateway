@@ -1,0 +1,7 @@
+# The image builds only the root Go module (see Dockerfile).
+.git
+.github
+desktop-native
+test
+docs
+*.md
