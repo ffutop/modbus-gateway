@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 // BenchmarkMemoryStorage_OnWrite benchmarks the OnWrite hook for MemoryStorage.

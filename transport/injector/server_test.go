@@ -2,35 +2,35 @@
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
-package localslave
+package injector
 
 import (
 	"context"
 	"testing"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 	"github.com/ffutop/modbus-gateway/modbus"
 )
 
-func newTestInjector(t *testing.T, mappings []ResolvedMapping) (*InjectorSlave, *simulation.Simulation) {
+func newTestInjector(t *testing.T, mappings []mapping) (*Client, *simulation.Simulation) {
 	t.Helper()
 	sim, err := simulation.Open("sim", persistence.NewMemoryStorage())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	return NewInjectorSlave(sim, mappings), sim
+	return newClient(sim, mappings), sim
 }
 
-func discreteInputMapping() []ResolvedMapping {
-	return []ResolvedMapping{
+func discreteInputMapping() []mapping {
+	return []mapping{
 		{SourceTable: model.TableCoils, SourceStart: 0, Count: 16, TargetTable: model.TableDiscreteInputs, TargetStart: 100},
 	}
 }
 
-func inputRegisterMapping() []ResolvedMapping {
-	return []ResolvedMapping{
+func inputRegisterMapping() []mapping {
+	return []mapping{
 		{SourceTable: model.TableHoldingRegisters, SourceStart: 0, Count: 8, TargetTable: model.TableInputRegisters, TargetStart: 200},
 	}
 }
@@ -44,7 +44,7 @@ func TestInjectorSlave_WriteMultipleCoils_MapsToDiscreteInputs(t *testing.T) {
 		FunctionCode: modbus.FuncCodeWriteMultipleCoils,
 		Data:         []byte{0x00, 0x00, 0x00, 0x10, 0x02, 0xFF, 0x00},
 	}
-	resp, err := s.Process(ctx, req)
+	resp, err := s.Send(ctx, 1, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestInjectorSlave_WriteSingleCoil_MapsToDiscreteInput(t *testing.T) {
 		FunctionCode: modbus.FuncCodeWriteSingleCoil,
 		Data:         []byte{0x00, 0x05, 0xFF, 0x00},
 	}
-	if _, err := s.Process(ctx, req); err != nil {
+	if _, err := s.Send(ctx, 1, req); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestInjectorSlave_WriteMultipleRegisters_MapsToInputRegisters(t *testing.T)
 		FunctionCode: modbus.FuncCodeWriteMultipleRegisters,
 		Data:         []byte{0x00, 0x00, 0x00, 0x02, 0x04, 0x00, 0x01, 0x00, 0x02},
 	}
-	if _, err := s.Process(ctx, req); err != nil {
+	if _, err := s.Send(ctx, 1, req); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestInjectorSlave_WriteSingleRegister_MapsToInputRegister(t *testing.T) {
 		FunctionCode: modbus.FuncCodeWriteSingleRegister,
 		Data:         []byte{0x00, 0x03, 0xBE, 0xEF},
 	}
-	if _, err := s.Process(ctx, req); err != nil {
+	if _, err := s.Send(ctx, 1, req); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestInjectorSlave_UnmappedAddress_RejectedAndTargetUnchanged(t *testing.T) 
 		FunctionCode: modbus.FuncCodeWriteSingleCoil,
 		Data:         []byte{0x00, 0x14, 0xFF, 0x00}, // address 20, outside mapped [0,16)
 	}
-	resp, err := s.Process(ctx, req)
+	resp, err := s.Send(ctx, 1, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestInjectorSlave_WriteCrossingMappingBoundary_Rejected(t *testing.T) {
 		FunctionCode: modbus.FuncCodeWriteMultipleCoils,
 		Data:         []byte{0x00, 0x0A, 0x00, 0x10, 0x02, 0xFF, 0xFF},
 	}
-	resp, err := s.Process(ctx, req)
+	resp, err := s.Send(ctx, 1, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestInjectorSlave_IllegalFunctionCode_Rejected(t *testing.T) {
 		FunctionCode: modbus.FuncCodeReadCoils,
 		Data:         []byte{0x00, 0x00, 0x00, 0x01},
 	}
-	resp, err := s.Process(ctx, req)
+	resp, err := s.Send(ctx, 1, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,13 +180,13 @@ func TestInjectorSlave_MultipleNonOverlappingMappings(t *testing.T) {
 	s, sim := newTestInjector(t, mappings)
 	ctx := context.Background()
 
-	if _, err := s.Process(ctx, modbus.ProtocolDataUnit{
+	if _, err := s.Send(ctx, 1, modbus.ProtocolDataUnit{
 		FunctionCode: modbus.FuncCodeWriteSingleCoil,
 		Data:         []byte{0x00, 0x00, 0xFF, 0x00},
 	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := s.Process(ctx, modbus.ProtocolDataUnit{
+	if _, err := s.Send(ctx, 1, modbus.ProtocolDataUnit{
 		FunctionCode: modbus.FuncCodeWriteSingleRegister,
 		Data:         []byte{0x00, 0x00, 0x00, 0x2A},
 	}); err != nil {

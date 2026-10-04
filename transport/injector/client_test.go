@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/ffutop/modbus-gateway/internal/config"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
+	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 	"github.com/ffutop/modbus-gateway/modbus"
 )
 

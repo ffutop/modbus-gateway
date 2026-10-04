@@ -5,7 +5,7 @@
 package persistence
 
 import (
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 // Storage defines the interface for persisting the local slave data model.

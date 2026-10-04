@@ -7,7 +7,7 @@
 - 规范：[ffutop/engineering-handbook `standards/git/commit-messages.md`](https://github.com/ffutop/engineering-handbook/blob/5fb2cb512c242f9ac8197384d8053bb8250f7794/standards/git/commit-messages.md)
 - 固定版本：`5fb2cb512c242f9ac8197384d8053bb8250f7794`
 - 既有规则：仓库此前无书面提交规范；历史提交稳定使用 Conventional Commits 单行英文标题（如 `feat: add shared simulations and injector downstreams`）。
-- 采用格式：规范第 4 节默认格式 `<type>[(scope)][!]: <description>`，描述使用英文、祈使语气、小写开头、句末无句号。`scope` 仅在有助于定位时使用，取值参考包路径（如 `api`、`config`、`rtu`、`local-slave`）。
+- 采用格式：规范第 4 节默认格式 `<type>[(scope)][!]: <description>`，描述使用英文、祈使语气、小写开头、句末无句号。`scope` 仅在有助于定位时使用，取值参考包路径（如 `api`、`config`、`rtu`、`simulation`）。
 - 始终适用：单行，不含正文、空行或脚注；任何位置不得出现 `Co-Authored-By`（不区分大小写）。
 - 豁免：`75dd282` 及其之前的提交不追溯、不改写。
 - 检查入口：

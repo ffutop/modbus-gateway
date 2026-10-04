@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 // fakeStorage is a controllable persistence.Storage for testing Simulation's

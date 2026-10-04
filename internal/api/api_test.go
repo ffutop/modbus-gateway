@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/gateway"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
+	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 	"github.com/ffutop/modbus-gateway/modbus"
 	"github.com/ffutop/modbus-gateway/transport"

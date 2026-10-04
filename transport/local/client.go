@@ -2,36 +2,32 @@
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
+// Package local adapts the "local" downstream type: a Slave ID served
+// in-process from a shared simulation model, implementing the standard
+// Modbus functions FC01-06, FC15 and FC16.
 package local
 
 import (
 	"context"
 
-	localslave "github.com/ffutop/modbus-gateway/internal/local-slave"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/modbus"
 )
 
-// Client implements Downstream for a business local slave backed by a
-// shared simulation model.
+// Client implements Downstream for a local slave backed by a shared
+// simulation model. Several clients (local or injector) may share one
+// Simulation.
 type Client struct {
-	slave *localslave.LocalSlave
+	sim *simulation.Simulation
 }
 
-// NewClient creates a new Local Client bound to sim. sim's lifecycle
-// (persistence open/close) is owned centrally by whoever built the shared
-// simulation registry, not by this Client - the same Simulation may be
-// referenced by other Clients (local or injector) too.
+// NewClient creates a Client bound to sim. sim's lifecycle (persistence
+// open/close) is owned by whoever built the shared simulation registry, not
+// by this Client.
 func NewClient(sim *simulation.Simulation) *Client {
-	return &Client{slave: localslave.NewLocalSlave(sim)}
+	return &Client{sim: sim}
 }
 
-// Send processes the PDU against the shared simulation model.
-func (c *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
-	return c.slave.Process(ctx, pdu)
-}
-
-// Connect is a no-op for local slave.
+// Connect is a no-op for a local slave.
 func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }

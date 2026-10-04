@@ -3,7 +3,7 @@ package persistence
 import (
 	"unsafe"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 const (

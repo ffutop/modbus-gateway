@@ -12,15 +12,17 @@ import (
 	"context"
 
 	"github.com/ffutop/modbus-gateway/internal/config"
-	localslave "github.com/ffutop/modbus-gateway/internal/local-slave"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
-// Client implements Downstream for the injector adapter.
+// Client implements Downstream for the injector adapter. It only accepts
+// FC05/FC06/FC15/FC16 and translates a write landing fully inside one
+// configured mapping into a write against the shared simulation's target
+// table. It never modifies Coils/HoldingRegisters, and never serves reads.
 type Client struct {
-	slave *localslave.InjectorSlave
+	sim      *simulation.Simulation
+	mappings []mapping
 }
 
 // NewClient creates a new injector Client bound to sim, translating the
@@ -28,9 +30,9 @@ type Client struct {
 // pairing, range bounds, non-overlap) is assumed to already have been
 // checked by config.Config.Validate() at load time.
 func NewClient(sim *simulation.Simulation, mappings []config.MappingConfig) *Client {
-	resolved := make([]localslave.ResolvedMapping, 0, len(mappings))
+	resolved := make([]mapping, 0, len(mappings))
 	for _, m := range mappings {
-		resolved = append(resolved, localslave.ResolvedMapping{
+		resolved = append(resolved, mapping{
 			SourceTable: tableFromName(m.Source.Table),
 			SourceStart: m.Source.StartAddress,
 			Count:       m.Source.Count,
@@ -38,7 +40,11 @@ func NewClient(sim *simulation.Simulation, mappings []config.MappingConfig) *Cli
 			TargetStart: m.Target.StartAddress,
 		})
 	}
-	return &Client{slave: localslave.NewInjectorSlave(sim, resolved)}
+	return newClient(sim, resolved)
+}
+
+func newClient(sim *simulation.Simulation, mappings []mapping) *Client {
+	return &Client{sim: sim, mappings: mappings}
 }
 
 func tableFromName(name string) model.TableType {
@@ -55,11 +61,6 @@ func tableFromName(name string) model.TableType {
 		// Unreachable once config.Config.Validate() has run.
 		return model.TableType(-1)
 	}
-}
-
-// Send processes the PDU against the shared simulation model via mapping.
-func (c *Client) Send(ctx context.Context, slaveID byte, pdu modbus.ProtocolDataUnit) (modbus.ProtocolDataUnit, error) {
-	return c.slave.Process(ctx, pdu)
 }
 
 // Connect is a no-op for the injector adapter.
