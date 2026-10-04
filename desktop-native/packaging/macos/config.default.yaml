@@ -1,0 +1,21 @@
+# First-launch local demo. Editable copy lives in:
+# ~/Library/Application Support/ModMux/config.yaml
+version: 1
+log:
+  level: info
+simulations:
+  - name: local-demo
+    persistence:
+      type: memory
+gateways:
+  - name: local-demo
+    upstreams:
+      - type: tcp
+        tcp:
+          address: "127.0.0.1:15020"
+    downstreams:
+      - name: local-slave
+        type: local
+        slave_ids: "1"
+        simulation:
+          ref: local-demo

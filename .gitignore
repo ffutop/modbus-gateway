@@ -8,3 +8,8 @@ desktop/node_modules/
 desktop/dist/
 desktop/test-results/
 desktop/resources/bin/
+
+# Native desktop app
+desktop-native/modmux-desktop
+desktop-native/modmux-desktop.exe
+desktop-native/dist/

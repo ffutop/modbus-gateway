@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>预览</title>
+<!-- Saved tokens first so the page renders before the studio posts the draft;
+     the draft lands in #draft and overrides them. -->
+<link rel="stylesheet" href="/repo/web/tokens.css">
+<style id="draft"></style>
+<link rel="stylesheet" href="/repo/web/app.css">
+<style>
+  /* app.css sizes the real console to the window; the preview scrolls. */
+  html,body{height:auto;overflow:auto;background:var(--backdrop)}
+  body{padding:16px;user-select:text}
+  .frame{background:var(--canvas);border:1px solid var(--hair);border-radius:var(--r-md);overflow:hidden;margin-bottom:16px}
+  .cap{font-size:var(--fs-caption);color:var(--muted);font-weight:600;letter-spacing:.04em;margin:0 0 6px 2px}
+  .row{display:flex;min-height:0}
+  .row .side{width:200px;flex:none}
+  .row .center{flex:1}
+  .row .insp{width:240px;flex:none;border-left:1px solid var(--hair)}
+  .fake-hover{background:var(--hover)}
+  .fake-focus{outline:2px solid var(--accent-bg);border-color:var(--accent)!important}
+  .topo-demo{height:190px}
+  .grid-demo{width:100%}
+  .specimen{display:grid;grid-template-columns:90px 1fr;gap:6px 12px;align-items:baseline;padding:12px}
+  .specimen dt{font-family:var(--mono);font-size:var(--fs-caption);color:var(--muted)}
+  .specimen dd{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .radii{display:flex;gap:12px;padding:12px;flex-wrap:wrap}
+  .radii div{width:72px;height:44px;background:var(--card);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;font-size:var(--fs-caption);color:var(--muted)}
+  .elev{display:flex;gap:16px;padding:16px;background:var(--soft)}
+  .elev div{width:140px;height:56px;background:var(--canvas);border-radius:var(--r-lg);display:flex;align-items:center;justify-content:center;font-size:var(--fs-caption);color:var(--muted)}
+</style>
+</head>
+<body>
+
+<p class="cap">工作台</p>
+<div class="frame">
+  <header class="tool">
+    <span class="file">line-a-gateway.yaml</span>
+    <button class="btn pri">保存 <span class="kbd" style="color:var(--on-dark-muted);border-color:var(--on-dark-muted)">⌘S</span></button>
+    <button class="btn">重新加载</button>
+    <button class="btn" disabled>重启网关</button>
+    <span class="sp"></span>
+    <span class="seg"><button aria-pressed="true">详情</button><button aria-pressed="false">拓扑</button></span>
+    <span class="badge ok">配置与运行中一致</span>
+  </header>
+  <div class="row">
+    <nav class="side">
+      <div class="sec">网关</div>
+      <div class="node" style="--d:0"><b>business</b><span class="r faint">3</span></div>
+      <div class="node" style="--d:1" aria-selected="true">→ plc-sim<span class="r mono muted">100</span></div>
+      <div class="node fake-hover" style="--d:1">→ boiler-sim<span class="r mono faint">101</span></div>
+      <div class="node" style="--d:1">→ remote-plc<span class="r mono faint">1-10</span></div>
+      <div class="sec">模拟从站</div>
+      <div class="node" style="--d:0">line-a<span class="r faint">memory</span></div>
+    </nav>
+    <section class="center">
+      <div class="tabs" role="tablist"><span role="tab" aria-selected="true">plc-sim</span><span role="tab">拓扑 · business</span><span class="hint">Ctrl+1 / Ctrl+2</span></div>
+      <div class="body">
+        <div class="h"><h2>plc-sim</h2><span class="badge">local</span><span class="muted">属于网关 business</span></div>
+        <span class="stale">配置文件已在别处被修改，当前修改无法保存。<button class="btn">重新加载</button></span>
+        <div class="box">
+          <h4>属性</h4>
+          <div class="field"><label>名称</label><input value="plc-sim"></div>
+          <div class="field"><label>类型</label><input value="local" readonly></div>
+          <div class="field"><label>Slave IDs</label><input class="fake-focus" value="100"></div>
+          <div class="field"><label>重复 ID</label><input value="101" aria-invalid="true"></div>
+          <div class="field-err">Slave ID 101 已被 boiler-sim 使用</div>
+        </div>
+      </div>
+    </section>
+    <aside class="insp">
+      <div class="insp-h">运行指标 <span class="muted">· business/plc-sim</span></div>
+      <div class="kpi"><div><b>42</b><span>请求/秒</span></div><div><b>0.8%</b><span>错误率</span></div><div><b>1.04ms</b><span>p50</span></div><div><b>1.86ms</b><span>p99</span></div></div>
+      <div><span class="small">请求/秒 · 近 40 秒</span>
+        <svg viewBox="0 0 240 40" preserveAspectRatio="none" style="display:block;width:100%;height:40px"><polyline points="0,40 0,30 30,28 60,20 90,24 120,12 150,16 180,8 210,14 240,10 240,40" class="spark-area"/><polyline points="0,30 30,28 60,20 90,24 120,12 150,16 180,8 210,14 240,10" class="spark-line" vector-effect="non-scaling-stroke"/></svg>
+      </div>
+      <dl class="totals"><dt>累计请求</dt><dd>12,804</dd><dt>累计错误</dt><dd class="err-txt">103</dd></dl>
+    </aside>
+  </div>
+  <div class="dock-tabs" role="tablist"><span role="tab" aria-selected="true">请求日志</span><span role="tab">问题 <span class="badge err">2</span></span><span class="sp"></span><span class="faint">筛选：business/plc-sim</span></div>
+  <table class="t">
+    <thead><tr><th>时间</th><th>网关</th><th>从站</th><th>功能码</th><th>耗时</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">09:30:00.851</td><td>business</td><td class="mono">100</td><td>03 读保持</td><td class="mono">1.24 ms</td><td class="ok-txt">正常</td></tr>
+      <tr class="bad"><td class="mono">09:30:00.888</td><td>business</td><td class="mono">4</td><td>03 读保持</td><td class="mono">1.28 ms</td><td class="err-txt">gateway path unavailable</td></tr>
+      <tr><td class="mono">09:30:00.925</td><td>business</td><td class="mono">100</td><td>06 写单寄存器</td><td class="mono">1.32 ms</td><td class="ok-txt">正常</td></tr>
+    </tbody>
+  </table>
+  <footer class="status"><span><span class="dot"></span> 管理连接正常</span><span><span class="dot warn"></span> 请求日志连接已断开，正在重试</span><span><span class="dot err"></span> 网关异常</span><span class="sp"></span><span>最后更新 09:30:01</span></footer>
+</div>
+
+<p class="cap">状态徽标</p>
+<div class="frame" style="padding:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="badge ok">运行中 · 2 个网关</span><span class="badge warn">请求过快，12 条未显示</span><span class="badge err">启动失败</span><span class="badge">tcp</span>
+  <span class="ok-txt">正常</span><span class="err-txt">CRC 错误</span><span class="muted">运行数据未知</span><span class="faint">0</span>
+</div>
+
+<p class="cap">拓扑</p>
+<div class="frame">
+  <div class="topo topo-demo" style="--nw:140px">
+    <svg aria-hidden="true">
+      <path d="M150,95 C215,95 215,95 280,95" class="edge"/><path d="M150,95 C215,95 215,95 280,95" class="flow"/>
+      <path d="M420,95 C470,95 470,45 520,45" class="edge hi"/><path d="M420,95 C470,95 470,45 520,45" class="flow"/>
+      <path d="M420,95 C470,95 470,145 520,145" class="edge"/><path d="M420,95 C470,95 470,145 520,145" class="flow"/>
+      <path d="M660,45 C700,45 700,95 740,95" class="edge"/><path d="M660,45 C700,45 700,95 740,95" class="flow inj"/>
+      <text x="700" y="64" text-anchor="middle" class="edge-label">注入写入</text>
+    </svg>
+    <span class="tcol" style="left:80px">上游</span><span class="tcol" style="left:350px">网关</span><span class="tcol" style="left:590px">下游</span>
+    <div class="tn" style="left:80px;top:95px"><span class="k">上游 · tcp</span><span class="n">0.0.0.0:502</span></div>
+    <div class="tn gw" style="left:350px;top:95px"><span class="k">网关</span><span class="n">business</span><span class="s">42 req/s</span></div>
+    <div class="tn" aria-pressed="true" style="left:590px;top:45px"><span class="k">local · ID 100</span><span class="n">plc-sim</span><span class="s">p99 1.86ms</span></div>
+    <div class="tn" style="left:590px;top:145px"><span class="k">tcp · ID 1-10</span><span class="n">remote-plc</span><span class="s">运行数据未知</span></div>
+  </div>
+</div>
+
+<p class="cap">寄存器</p>
+<div class="frame">
+  <div class="grid-demo" role="grid">
+    <div class="reg-row" style="grid-template-columns:64px repeat(8,1fr)"><div class="reg addr"></div><div class="reg addr head">+0</div><div class="reg addr head">+1</div><div class="reg addr head">+2</div><div class="reg addr head">+3</div><div class="reg addr head">+4</div><div class="reg addr head">+5</div><div class="reg addr head">+6</div><div class="reg addr head">+7</div></div>
+    <div class="reg-row" style="grid-template-columns:64px repeat(8,1fr)"><div class="reg addr">0000</div><div class="reg">4660</div><div class="reg hl">43981</div><div class="reg">7</div><div class="reg zero">0</div><div class="reg zero">0</div><div class="reg">128</div><div class="reg zero">0</div><div class="reg">1</div></div>
+  </div>
+</div>
+
+<p class="cap">字号</p>
+<div class="frame"><dl class="specimen" id="specimen"></dl></div>
+
+<p class="cap">圆角</p>
+<div class="frame"><div class="radii" id="radii"></div></div>
+
+<p class="cap">阴影</p>
+<div class="frame"><div class="elev"><div style="box-shadow:var(--shadow-sm)">shadow-sm</div><div style="box-shadow:var(--shadow-lg)">shadow-lg</div></div></div>
+
+<script>
+// The studio calls apply(css, tokens) on every edit.
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+window.apply = function (css, tokens) {
+  document.getElementById('draft').textContent = css;
+  document.getElementById('specimen').innerHTML = tokens.fontSize.map((f) =>
+    `<dt>fs-${esc(f.name)}</dt><dd style="font-size:var(--fs-${esc(f.name)})">Modbus 网关 0x03 读保持寄存器 1234567890</dd>`).join('');
+  document.getElementById('radii').innerHTML = tokens.radius.map((r) =>
+    `<div style="border-radius:var(--r-${esc(r.name)})">r-${esc(r.name)}</div>`).join('');
+};
+</script>
+</body>
+</html>

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- 原生桌面版预览（`desktop-native/`，基于 Gio）：在进程内运行网关，提供桌面菜单、链路拓扑、请求／寄存器监视与可视化／YAML 配置编辑。保存执行校验与外部修改冲突检测，失败保留草稿；保存的配置在重启应用后生效。它是独立的 Go 模块，需要 Go 1.24 及以上；根模块仍保持 Go 1.21。
+- macOS 应用包打包，包含几何风格 ModMux 图标、首次启动的私有配置、用户目录日志和打包的 Go／Noto Sans SC 字体。
+- 遥测事件新增原始请求与响应 PDU。
+
+### Changed
+
+- 网关装配逻辑从 `main.go` 移至 `internal/app`，命令行版与桌面版启动同一套运行时；启动行为不变。
+- 控制台、Electron 停机页与原生桌面版改为共用由 `design/tokens.json` 生成的设计令牌（见 `design/README.md`）。状态文字改用更深的绿色和红色，徽标与结果文字达到 WCAG AA 对比度；其余外观不变。
+
 ## [0.5.0] - 2026-09-19
 
 ### Added

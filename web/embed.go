@@ -10,5 +10,5 @@ import "embed"
 
 // Assets is the console's static files (index.html at the root).
 //
-//go:embed index.html app.css app.js
+//go:embed index.html tokens.css app.css app.js
 var Assets embed.FS

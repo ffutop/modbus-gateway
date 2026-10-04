@@ -29,6 +29,10 @@ type Event struct {
 	Quantity     uint16
 	Duration     time.Duration
 	Err          error
+	// Request and Response are the raw PDUs, function code first. Response
+	// is nil when Err is set.
+	Request  []byte
+	Response []byte
 }
 
 // Recorder accumulates Events. It is safe for concurrent use and never

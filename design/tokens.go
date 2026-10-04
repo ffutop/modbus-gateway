@@ -1,0 +1,251 @@
+// Copyright (c) 2026 Li Jinling. All rights reserved.
+// This software may be modified and distributed under the terms
+// of the BSD-3 Clause License. See the LICENSE file for details.
+
+// Package design renders the design tokens in tokens.json into the files each
+// UI consumes: CSS custom properties for the web console and the Electron
+// stopped page, and Go declarations for the Gio desktop app.
+package design
+
+//go:generate go run ./cmd/gentokens
+
+import (
+	"bytes"
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"go/format"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+//go:embed tokens.json
+var tokensJSON []byte
+
+// Tokens mirrors tokens.json. Lists keep their order so the generated files
+// read in the same order as the source.
+type Tokens struct {
+	Comment  string      `json:"$comment"`
+	Palette  []Value     `json:"palette"`
+	Color    []Ref       `json:"color"`
+	Alpha    []Value     `json:"alpha"`
+	Shadow   []Value     `json:"shadow"`
+	Font     []Value     `json:"font"`
+	FontSize []Dimension `json:"fontSize"`
+	Radius   []Dimension `json:"radius"`
+	Density  struct {
+		Comment       string  `json:"$comment"`
+		Web           float64 `json:"web"`
+		DesktopNative float64 `json:"desktop-native"`
+	} `json:"density"`
+}
+
+type Value struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Use   string `json:"use"`
+}
+
+type Ref struct {
+	Name string `json:"name"`
+	Ref  string `json:"ref"`
+	Use  string `json:"use"`
+}
+
+type Dimension struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+	Use   string  `json:"use"`
+}
+
+var (
+	nameRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+	hexRe  = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+)
+
+// Load parses and validates the embedded tokens.json.
+func Load() (*Tokens, error) { return Parse(tokensJSON) }
+
+// Parse parses and validates a tokens.json document.
+func Parse(data []byte) (*Tokens, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var t Tokens
+	if err := dec.Decode(&t); err != nil {
+		return nil, fmt.Errorf("tokens.json: %w", err)
+	}
+	return &t, t.validate()
+}
+
+func (t *Tokens) validate() error {
+	palette := map[string]bool{}
+	for _, p := range t.Palette {
+		if !nameRe.MatchString(p.Name) || !hexRe.MatchString(p.Value) {
+			return fmt.Errorf("palette %q: want a kebab-case name and a lowercase #rrggbb value, got %q", p.Name, p.Value)
+		}
+		if palette[p.Name] {
+			return fmt.Errorf("palette %q: duplicate", p.Name)
+		}
+		palette[p.Name] = true
+	}
+	used := map[string]bool{}
+	seen := map[string]bool{}
+	check := func(group, name string) error {
+		if !nameRe.MatchString(name) {
+			return fmt.Errorf("%s %q: name must be kebab-case", group, name)
+		}
+		if seen[group+"/"+name] {
+			return fmt.Errorf("%s %q: duplicate", group, name)
+		}
+		seen[group+"/"+name] = true
+		return nil
+	}
+	for _, c := range t.Color {
+		if err := check("color", c.Name); err != nil {
+			return err
+		}
+		if !palette[c.Ref] {
+			return fmt.Errorf("color %q: unknown palette entry %q", c.Name, c.Ref)
+		}
+		used[c.Ref] = true
+	}
+	for _, p := range t.Palette {
+		if !used[p.Name] {
+			return fmt.Errorf("palette %q: not referenced by any color; remove it", p.Name)
+		}
+	}
+	for _, group := range []struct {
+		name string
+		vals []Value
+	}{{"alpha", t.Alpha}, {"shadow", t.Shadow}, {"font", t.Font}} {
+		for _, v := range group.vals {
+			if err := check(group.name, v.Name); err != nil {
+				return err
+			}
+		}
+	}
+	for _, group := range []struct {
+		name string
+		dims []Dimension
+	}{{"fontSize", t.FontSize}, {"radius", t.Radius}} {
+		for _, d := range group.dims {
+			if err := check(group.name, d.Name); err != nil {
+				return err
+			}
+			if d.Value <= 0 {
+				return fmt.Errorf("%s %q: value must be positive", group.name, d.Name)
+			}
+		}
+	}
+	if t.Density.Web <= 0 || t.Density.DesktopNative <= 0 {
+		return fmt.Errorf("density: web and desktop-native must be positive")
+	}
+	for _, r := range ContrastRules {
+		for _, name := range []string{r.Fg, r.Bg} {
+			if !seen["color/"+name] {
+				return fmt.Errorf("color %q: required by the contrast rules", name)
+			}
+		}
+	}
+	return nil
+}
+
+// Hex returns the #rrggbb value of a semantic color.
+func (t *Tokens) Hex(color string) (string, bool) {
+	for _, c := range t.Color {
+		if c.Name == color {
+			return t.hex(c.Ref), true
+		}
+	}
+	return "", false
+}
+
+func (t *Tokens) hex(ref string) string {
+	for _, p := range t.Palette {
+		if p.Name == ref {
+			return p.Value
+		}
+	}
+	panic("unvalidated palette ref " + ref)
+}
+
+// Output paths, relative to the repository root.
+const (
+	WebCSS        = "web/tokens.css"
+	DesktopCSS    = "desktop/tokens.css"
+	DesktopNative = "desktop-native/internal/ui/tokens_gen.go"
+)
+
+// Render returns every generated file, keyed by its path relative to the
+// repository root.
+func (t *Tokens) Render() map[string][]byte {
+	css := t.css()
+	return map[string][]byte{
+		WebCSS:        css,
+		DesktopCSS:    css,
+		DesktopNative: t.gio(),
+	}
+}
+
+const header = "Code generated by design/cmd/gentokens from design/tokens.json; DO NOT EDIT."
+
+func num(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+func (t *Tokens) css() []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "/* %s */\n", header)
+	b.WriteString("/* Sizes scale with --k (density): rendered size = design size x --k. */\n")
+	b.WriteString(":root{\n")
+	fmt.Fprintf(&b, "  --k:%s;\n", num(t.Density.Web))
+	for _, c := range t.Color {
+		fmt.Fprintf(&b, "  --%s:%s;\n", c.Name, t.hex(c.Ref))
+	}
+	for _, group := range [][]Value{t.Alpha, t.Shadow, t.Font} {
+		for _, v := range group {
+			fmt.Fprintf(&b, "  --%s:%s;\n", v.Name, v.Value)
+		}
+	}
+	for _, d := range t.FontSize {
+		fmt.Fprintf(&b, "  --fs-%s:calc(%spx * var(--k));\n", d.Name, num(d.Value))
+	}
+	for _, d := range t.Radius {
+		fmt.Fprintf(&b, "  --r-%s:%spx;\n", d.Name, num(d.Value))
+	}
+	b.WriteString("}\n")
+	return b.Bytes()
+}
+
+// camel turns "ok-bg" into "OkBg".
+func camel(name string) string {
+	parts := strings.Split(name, "-")
+	for i, p := range parts {
+		parts[i] = strings.ToUpper(p[:1]) + p[1:]
+	}
+	return strings.Join(parts, "")
+}
+
+func (t *Tokens) gio() []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "// %s\n\npackage ui\n\nimport \"gioui.org/unit\"\n\n", header)
+	b.WriteString("// Colors, in the same roles as the web console's CSS custom properties.\nvar (\n")
+	for _, c := range t.Color {
+		fmt.Fprintf(&b, "\tcol%s = rgb(0x%s)\n", camel(c.Name), strings.TrimPrefix(t.hex(c.Ref), "#"))
+	}
+	b.WriteString(")\n\n")
+	fmt.Fprintf(&b, "// Font sizes: design size x density %s, rounded to 0.5sp.\nconst (\n", num(t.Density.DesktopNative))
+	for _, d := range t.FontSize {
+		fmt.Fprintf(&b, "\tfs%s unit.Sp = %s\n", camel(d.Name), num(math.Round(d.Value*t.Density.DesktopNative*2)/2))
+	}
+	b.WriteString(")\n\n// Corner radii.\nconst (\n")
+	for _, d := range t.Radius {
+		fmt.Fprintf(&b, "\tradius%s unit.Dp = %s\n", camel(d.Name), num(d.Value))
+	}
+	b.WriteString(")\n")
+	src, err := format.Source(b.Bytes())
+	if err != nil {
+		panic(fmt.Sprintf("generated Go does not parse: %v", err))
+	}
+	return src
+}

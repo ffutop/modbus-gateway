@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Native desktop app preview (`desktop-native/`, Gio): runs gateways in-process with a desktop menu, link topology, request/register monitoring and visual/YAML configuration editing. Validated saves detect external changes and retain drafts on failure; saved configuration takes effect after restarting the app. A separate Go module needs Go 1.24+; the root module stays on Go 1.21.
+- macOS application bundle packaging with a geometric ModMux icon, private first-launch configuration, user-directory logs and bundled Go/Noto Sans SC fonts.
+- Telemetry events now carry the raw request and response PDUs.
+
+### Changed
+
+- Gateway assembly moved from `main.go` to `internal/app`, so the CLI and the desktop app start the same runtime. Startup behavior is unchanged.
+- Console, Electron stopped page and native desktop app now share one set of design tokens generated from `design/tokens.json` (see `design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast; the rest of the look is unchanged.
+
 ## [0.5.0] - 2026-09-19
 
 ### Added

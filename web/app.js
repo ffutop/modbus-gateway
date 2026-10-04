@@ -32,7 +32,7 @@ const TABLES = [['holding_registers', '保持寄存器 4x'], ['input_registers',
 const isBits = (table) => table === 'coils' || table === 'discrete_inputs';
 
 const LOG_CAP = 600;
-// K is the size scale from app.css (--k); pixel geometry computed here must
+// K is the size scale from tokens.css (--k); pixel geometry computed here must
 // match the CSS sizes it lays out.
 const K = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--k')) || 1;
 const ROW_H = Math.round(24 * K);
@@ -273,8 +273,8 @@ function renderTopology() {
   el.style.setProperty('--nw', `${nw}px`);
   el.innerHTML = `<div class="topology-note">运行拓扑 · 蓝色虚线：注入写入 ${state.sel?.kind === 'sim' ? `<select id="topology-gateway" aria-label="引用网关">${state.running.gateways.map((g,i) => (g.downstreams || []).some(d => d.simulation?.ref === cfg().simulations[state.sel.sim].name) ? `<option value="${i}" ${gi === i ? 'selected' : ''}>${esc(g.name)}</option>` : '').join('')}</select>` : ''}</div><svg aria-hidden="true" style="width:${W}px;height:${H}px">${edges.map(([a, b, key, inj]) => {
       const hi = on && (a === on || b === on);
-      return `<path d="${curve(at[a], at[b])}" fill="none" stroke="${hi ? '#a1a1aa' : '#d4d4d8'}" stroke-width="${hi ? 3 : 2}"/>
-        <path d="${curve(at[a], at[b])}" fill="none" stroke="${inj ? '#3b82f6' : '#111'}" stroke-width="1.5" stroke-dasharray="4 6" class="flow" data-edge="${esc(key)}" style="opacity:${on && !hi ? 0.3 : 0.85}"/>
+      return `<path d="${curve(at[a], at[b])}" class="edge${hi ? ' hi' : ''}"/>
+        <path d="${curve(at[a], at[b])}" class="flow${inj ? ' inj' : ''}" data-edge="${esc(key)}" style="opacity:${on && !hi ? 0.3 : 0.85}"/>
         <text x="${(at[a].x + at[b].x) / 2}" y="${(at[a].y + at[b].y) / 2 - 6}" text-anchor="middle" class="edge-label" ${inj ? '' : `data-edge-label="${esc(key)}"`}>${inj ? '注入写入' : ''}</text>`;
     }).join('')}</svg>
     ${(sims.length ? ['上游', '网关', '下游', '模拟从站'] : ['上游', '网关', '下游']).map((l, i) => `<div class="tcol" style="left:${cx[i]}px">${l}</div>`).join('')}
@@ -388,7 +388,7 @@ function spark(hist, h) {
   const max = Math.max(1, ...data);
   const pts = data.map((v, i) => `${(i / (n - 1) * w).toFixed(1)},${(h - v / max * (h - 2) - 1).toFixed(1)}`).join(' ');
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;width:100%;height:${h}px" aria-hidden="true">
-    <polyline points="0,${h} ${pts} ${w},${h}" fill="#111" fill-opacity=".07"/><polyline points="${pts}" fill="none" stroke="#111" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+    <polyline points="0,${h} ${pts} ${w},${h}" class="spark-area"/><polyline points="${pts}" class="spark-line" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
 function renderInspector() {

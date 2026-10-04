@@ -41,17 +41,17 @@ func (c *Config) Validate() error {
 }
 
 // Problems lists everything that would stop this config from starting: the
-// Validate rules plus the slave ID routing rules main.go applies while
+// Validate rules plus the slave ID routing rules internal/app applies while
 // building routing tables. LoadConfig does not enforce the routing rules
 // itself, so the command line keeps reporting them exactly as it always has.
 func (c *Config) Problems() []Problem {
 	return append(c.loadProblems(), c.routingProblems()...)
 }
 
-// routingProblems mirrors how main.go builds each gateway's routing table: a
-// lone downstream without slave_ids is the legacy default route, downstreams
-// of unknown type or without slave_ids are skipped, and every other
-// downstream's IDs must parse and route to it alone.
+// routingProblems mirrors how internal/app builds each gateway's routing
+// table: a lone downstream without slave_ids is the legacy default route,
+// downstreams of unknown type or without slave_ids are skipped, and every
+// other downstream's IDs must parse and route to it alone.
 func (c *Config) routingProblems() []Problem {
 	var problems []Problem
 	for gi, gw := range c.Gateways {
@@ -82,7 +82,7 @@ func (c *Config) routingProblems() []Problem {
 	return problems
 }
 
-// knownDownstreamTypes are the types main.go can create; it skips others.
+// knownDownstreamTypes are the types internal/app can create; it skips others.
 var knownDownstreamTypes = map[string]bool{"tcp": true, "rtu": true, "rtu-over-tcp": true, "local": true, "injector": true}
 
 func (c *Config) loadProblems() []Problem {

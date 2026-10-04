@@ -16,23 +16,13 @@ import (
 	_ "net/http/pprof" // Register pprof handlers
 	"os"
 	"os/signal"
-	"sort"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/api"
+	"github.com/ffutop/modbus-gateway/internal/app"
 	"github.com/ffutop/modbus-gateway/internal/config"
-	"github.com/ffutop/modbus-gateway/internal/gateway"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
-	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
-	"github.com/ffutop/modbus-gateway/transport"
-	"github.com/ffutop/modbus-gateway/transport/injector"
-	"github.com/ffutop/modbus-gateway/transport/local"
-	"github.com/ffutop/modbus-gateway/transport/rtu"
-	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
-	"github.com/ffutop/modbus-gateway/transport/tcp"
 	"github.com/ffutop/modbus-gateway/web"
 )
 
@@ -76,25 +66,6 @@ func main() {
 
 	slog.Info("Starting Modbus Gateway...")
 
-	// Open every shared simulation model up front. A simulation's
-	// persistence must successfully open/restore before any downstream
-	// referencing it is allowed to start; since a simulation may be shared
-	// by downstreams across multiple gateways, any failure here aborts the
-	// whole process rather than selectively starting a subset of gateways.
-	simulations := make(map[string]*simulation.Simulation, len(cfg.Simulations))
-	for _, simCfg := range cfg.Simulations {
-		storage := persistence.New(persistence.Config{
-			Type: simCfg.Persistence.Type,
-			Path: simCfg.Persistence.Path,
-		})
-		sim, err := simulation.Open(simCfg.Name, storage)
-		if err != nil {
-			slog.Error("Failed to open simulation persistence", "simulation", simCfg.Name, "err", err)
-			os.Exit(1)
-		}
-		simulations[simCfg.Name] = sim
-	}
-
 	// Telemetry only exists for the management console; without `ui` the
 	// forwarding path is exactly what it was before.
 	var recorder *telemetry.Recorder
@@ -102,112 +73,22 @@ func main() {
 		recorder = telemetry.NewRecorder(1000)
 	}
 
-	// Create Gateways
-	var gateways []*gateway.Gateway
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	for _, gwCfg := range cfg.Gateways {
-		// Setup Routing
-		routes := make(map[byte]transport.Downstream)
-		var defaultRoute transport.Downstream
-		names := make(map[transport.Downstream]string)
-
-		// Compatibility Check: If only one downstream and no SlaveIDs, treat as default route
-		if len(gwCfg.Downstreams) == 1 && gwCfg.Downstreams[0].SlaveIDs == "" {
-			ds, err := createDownstream(gwCfg.Downstreams[0], simulations)
-			if err != nil {
-				slog.Error("Failed to create default downstream", "gateway", gwCfg.Name, "err", err)
-				continue
-			}
-			defaultRoute = ds
-			names[ds] = gwCfg.Downstreams[0].DisplayName(0)
-			slog.Info("Configured default route (legacy mode)", "gateway", gwCfg.Name)
-		} else {
-			// Routing Mode
-			for i, dsCfg := range gwCfg.Downstreams {
-				ds, err := createDownstream(dsCfg, simulations)
-				if err != nil {
-					slog.Error("Failed to create downstream", "gateway", gwCfg.Name, "err", err)
-					continue
-				}
-				names[ds] = dsCfg.DisplayName(i)
-
-				ids, err := gateway.ParseSlaveIDs(dsCfg.SlaveIDs)
-				if err != nil {
-					slog.Error("Failed to parse slave IDs", "gateway", gwCfg.Name, "slave_ids", dsCfg.SlaveIDs, "err", err)
-					os.Exit(1)
-				}
-
-				if len(ids) == 0 {
-					slog.Warn("Downstream configured without SlaveIDs in routing mode, it will be unreachable", "gateway", gwCfg.Name, "type", dsCfg.Type)
-					continue
-				}
-
-				for _, id := range ids {
-					if _, exists := routes[id]; exists {
-						slog.Error("Duplicate route for slave ID", "id", id, "gateway", gwCfg.Name)
-						os.Exit(1)
-					}
-					routes[id] = ds
-				}
-			}
-			slog.Info("Configured routing table", "gateway", gwCfg.Name, "routes_count", len(routes))
-		}
-
-		if len(routes) == 0 && defaultRoute == nil {
-			slog.Error("Gateway has no valid routes", "gateway", gwCfg.Name)
-			continue
-		}
-
-		// Create Upstreams
-		var upstreams []transport.Upstream
-		for _, usCfg := range gwCfg.Upstreams {
-			var us transport.Upstream
-			switch usCfg.Type {
-			case "tcp":
-				us = tcp.NewServer(usCfg.Tcp.Address)
-			case "rtu":
-				us = rtu.NewServer(usCfg.Serial)
-			case "rtu-over-tcp":
-				us = rtuovertcp.NewServer(usCfg.Tcp.Address)
-			default:
-				slog.Error("Unknown upstream type", "type", usCfg.Type, "gateway", gwCfg.Name)
-				continue
-			}
-			upstreams = append(upstreams, us)
-		}
-
-		gw := gateway.NewGateway(gwCfg.Name, upstreams, routes, defaultRoute)
-		gw.Telemetry = recorder
-		gw.DownstreamNames = names
-		gateways = append(gateways, gw)
-	}
-
-	if len(gateways) == 0 {
-		slog.Error("No valid gateways configured. Exiting.")
+	rt, err := app.New(cfg, recorder)
+	if err != nil {
+		slog.Error("Failed to start gateways. Exiting.", "err", err)
 		os.Exit(1)
 	}
 
-	// Start Gateways
-	var wg sync.WaitGroup
-	for _, gw := range gateways {
-		wg.Add(1)
-		go func(g *gateway.Gateway) {
-			defer wg.Done()
-			if err := g.Start(ctx); err != nil {
-				slog.Error("Gateway stopped with error", "name", g.Name, "err", err)
-			}
-		}(gw)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rt.Start(ctx)
 
 	uiServer := startUI(cfg.UI, os.Getenv("MODMUX_UI_TOKEN"), announceUI, api.Deps{
 		Version:         version,
 		ConfigPath:      cfg.Path,
 		StartupRevision: cfg.Revision,
 		RunningConfig:   cfg,
-		Simulations:     sortedSimulations(simulations),
+		Simulations:     rt.SortedSimulations(),
 		Telemetry:       recorder,
 		Static:          web.Assets,
 	})
@@ -238,40 +119,10 @@ func main() {
 		shutdownCancel()
 	}
 	cancel()
-	wg.Wait()
-
-	for name, sim := range simulations {
-		if err := sim.Close(); err != nil {
-			slog.Error("Failed to close simulation", "simulation", name, "err", err)
-		}
-	}
+	rt.Wait()
+	rt.Close()
 
 	slog.Info("Goodbye.")
-}
-
-func createDownstream(cfg config.DownstreamConfig, simulations map[string]*simulation.Simulation) (transport.Downstream, error) {
-	switch cfg.Type {
-	case "tcp":
-		return tcp.NewClient(cfg.Tcp.Address), nil
-	case "rtu":
-		return rtu.NewClient(cfg.Serial), nil
-	case "rtu-over-tcp":
-		return rtuovertcp.NewClient(cfg.Tcp.Address), nil
-	case "local":
-		sim, ok := simulations[cfg.SimulationRef]
-		if !ok {
-			return nil, fmt.Errorf("simulation %q not found", cfg.SimulationRef)
-		}
-		return local.NewClient(sim), nil
-	case "injector":
-		sim, ok := simulations[cfg.SimulationRef]
-		if !ok {
-			return nil, fmt.Errorf("simulation %q not found", cfg.SimulationRef)
-		}
-		return injector.NewClient(sim, cfg.Mappings), nil
-	default:
-		return nil, fmt.Errorf("unknown downstream type: %s", cfg.Type)
-	}
 }
 
 func setupLogger(cfg config.LogConfig) {
@@ -336,13 +187,4 @@ func startUI(cfg config.UIConfig, token string, announce bool, deps api.Deps) *h
 		fmt.Println(string(ready))
 	}
 	return srv
-}
-
-func sortedSimulations(m map[string]*simulation.Simulation) []*simulation.Simulation {
-	sims := make([]*simulation.Simulation, 0, len(m))
-	for _, s := range m {
-		sims = append(sims, s)
-	}
-	sort.Slice(sims, func(i, j int) bool { return sims[i].Name < sims[j].Name })
-	return sims
 }

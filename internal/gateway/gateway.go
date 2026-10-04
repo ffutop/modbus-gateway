@@ -115,8 +115,25 @@ func (g *Gateway) handleRequest(ctx context.Context, slaveID byte, pdu modbus.Pr
 		Quantity:     qty,
 		Duration:     time.Since(start),
 		Err:          err,
+		Request:      pduBytes(pdu),
+		Response:     responseBytes(resp, err),
 	})
 	return resp, err
+}
+
+// pduBytes copies pdu into its wire form, function code first.
+func pduBytes(pdu modbus.ProtocolDataUnit) []byte {
+	b := make([]byte, 0, 1+len(pdu.Data))
+	return append(append(b, pdu.FunctionCode), pdu.Data...)
+}
+
+// responseBytes is the PDU returned by the downstream, or nil when the
+// request failed; the upstream server then answers with its own exception.
+func responseBytes(resp modbus.ProtocolDataUnit, err error) []byte {
+	if err != nil {
+		return nil
+	}
+	return pduBytes(resp)
 }
 
 // requestRange extracts the starting address and quantity of the standard
