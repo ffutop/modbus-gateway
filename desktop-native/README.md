@@ -66,20 +66,16 @@ cd desktop-native
 | `main.go` | 带 `--sidecar` 时作为网关子进程运行 `internal/cli`；否则加载配置、启动网关子进程，驱动窗口事件循环，网关重启后按配置文件重建工作台 |
 | `internal/sidecar` | 子进程启动／停止／崩溃检测（`Supervisor`）与管理 API 客户端（后台缓存事件、寄存器窗口与监听状态） |
 | `internal/live` | 工作台读取的数据源（`Source`）与进程状态（`Runtime`）接口；`Local` 为测试用的进程内实现 |
-| `internal/workspace` | 已确认的菜单、拓扑、链路／请求／模型联动、配置编辑；仅投影真实运行数据 |
+| `internal/workspace` | 唯一界面：菜单、拓扑、链路／请求／模型联动、配置编辑；仅投影真实运行数据。`tokens_gen.go` 由 `go generate ./design` 生成 |
 | `internal/configfile` | 原文配置读取、校验、版本冲突检测及原子保存 |
 | `internal/launch` | 应用包启动的用户配置、工作目录与日志路径 |
 | `scripts/package-macos.sh` | 构建并校验 macOS `.app` |
 | `internal/decode` | Modbus PDU 字段解码，每个字段对应它在 PDU 中的字节区间 |
-| `internal/store` | 有界的请求历史（默认 20000 条）、过滤和速率计算 |
-| `internal/ui` | 早期基础监视界面，保留其已有测试；正式入口已切换到 workspace |
 
 ## 测试
 
 ```bash
 go test ./...
-# 离屏渲染一张界面截图到指定目录，用于检查布局：
-UI_SNAPSHOT_DIR=/tmp go test ./internal/ui -run Snapshot
-# 正式工作台的常规／最小窗口及错误状态截图：
+# 离屏渲染工作台的常规／最小窗口、菜单、配置、YAML、启动失败与重启确认截图：
 WORKSPACE_SNAPSHOT_DIR=/tmp/modmux-live go test ./internal/workspace -run TestWorkspaceSnapshots -count=1
 ```

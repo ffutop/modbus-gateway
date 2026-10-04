@@ -54,12 +54,15 @@ var goColor = regexp.MustCompile(`\brgb\(0x[0-9a-fA-F]+\)|color\.NRGBA\{R:\s*0x`
 // TestNoRawColors keeps every color in the desktop UI flowing from the tokens.
 func TestNoRawColors(t *testing.T) {
 	var files []string
-	native, _ := filepath.Glob(root("desktop-native/internal/ui/*.go"))
+	native, _ := filepath.Glob(root("desktop-native/internal/workspace/*.go"))
 	for _, f := range native {
 		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, "tokens_gen.go") {
 			continue
 		}
-		files = append(files, "desktop-native/internal/ui/"+filepath.Base(f))
+		files = append(files, "desktop-native/internal/workspace/"+filepath.Base(f))
+	}
+	if len(files) == 0 {
+		t.Skip("desktop-native not present in this checkout")
 	}
 	for _, rel := range files {
 		data, err := os.ReadFile(root(rel))

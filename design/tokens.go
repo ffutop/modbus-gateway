@@ -59,7 +59,26 @@ type Dimension struct {
 var (
 	nameRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 	hexRe  = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+	rgbaRe = regexp.MustCompile(`^rgba\((\d{1,3}),(\d{1,3}),(\d{1,3}),(0|1|0?\.\d+)\)$`)
 )
+
+// rgba parses an alpha token value such as "rgba(0,0,0,.33)" into its
+// color and its alpha byte.
+func rgba(value string) (rgb uint32, a uint8, ok bool) {
+	m := rgbaRe.FindStringSubmatch(value)
+	if m == nil {
+		return 0, 0, false
+	}
+	for _, c := range m[1:4] {
+		v, _ := strconv.Atoi(c)
+		if v > 255 {
+			return 0, 0, false
+		}
+		rgb = rgb<<8 | uint32(v)
+	}
+	f, _ := strconv.ParseFloat(m[4], 64)
+	return rgb, uint8(math.Round(f * 255)), true
+}
 
 // Load parses and validates the embedded tokens.json.
 func Load() (*Tokens, error) { return Parse(tokensJSON) }
@@ -116,6 +135,9 @@ func (t *Tokens) validate() error {
 		if err := check("alpha", v.Name); err != nil {
 			return err
 		}
+		if _, _, ok := rgba(v.Value); !ok {
+			return fmt.Errorf("alpha %q: want rgba(r,g,b,a), got %q", v.Name, v.Value)
+		}
 	}
 	for _, group := range []struct {
 		name string
@@ -163,7 +185,7 @@ func (t *Tokens) hex(ref string) string {
 }
 
 // DesktopNative is the generated file's path, relative to the repository root.
-const DesktopNative = "desktop-native/internal/ui/tokens_gen.go"
+const DesktopNative = "desktop-native/internal/workspace/tokens_gen.go"
 
 // Render returns every generated file, keyed by its path relative to the
 // repository root.
@@ -186,10 +208,15 @@ func camel(name string) string {
 
 func (t *Tokens) gio() []byte {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "// %s\n\npackage ui\n\nimport \"gioui.org/unit\"\n\n", header)
+	fmt.Fprintf(&b, "// %s\n\npackage workspace\n\nimport \"gioui.org/unit\"\n\n", header)
 	b.WriteString("// Colors, by semantic role.\nvar (\n")
 	for _, c := range t.Color {
 		fmt.Fprintf(&b, "\tcol%s = rgb(0x%s)\n", camel(c.Name), strings.TrimPrefix(t.hex(c.Ref), "#"))
+	}
+	b.WriteString(")\n\n// Translucent overlays.\nvar (\n")
+	for _, v := range t.Alpha {
+		c, a, _ := rgba(v.Value)
+		fmt.Fprintf(&b, "\tcol%s = alpha(rgb(0x%06x), %d)\n", camel(v.Name), c, a)
 	}
 	b.WriteString(")\n\n")
 	fmt.Fprintf(&b, "// Font sizes: design size x density %s, rounded to 0.5sp.\nconst (\n", num(t.Density.DesktopNative))
