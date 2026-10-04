@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- 网关装配逻辑从 `main.go` 移至 `internal/app`，命令行版与桌面版启动同一套运行时；启动行为不变。
+- 网关装配逻辑从 `main.go` 移至 `internal/app`，命令本身移至 `internal/cli`，桌面版的子进程运行的正是命令行版；参数与启动行为不变。
 - 控制台与原生桌面版改为共用由 `design/tokens.json` 生成的设计令牌（见 `design/README.md`）。状态文字改用更深的绿色和红色，徽标与结果文字达到 WCAG AA 对比度；其余外观不变。
 
 ## [0.5.0] - 2026-09-19
