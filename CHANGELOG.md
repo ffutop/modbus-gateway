@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Gateway assembly moved from `main.go` to `internal/app`, and the command itself to `internal/cli`, so the desktop app runs exactly the CLI as its child process. Flags and startup behavior are unchanged.
 - With `-exit-on-stdin-eof`, the gateway ignores SIGPIPE: when its parent exits and no one reads its output any more, it still completes the graceful shutdown and flushes persistence instead of being killed while logging.
-- Console and native desktop app now share one set of design tokens generated from `design/tokens.json` (see `design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast; the rest of the look is unchanged.
+- The native desktop app's colors, font sizes and radii are generated from `design/tokens.json` (see `design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast.
 
 ## [0.5.0] - 2026-09-19
 

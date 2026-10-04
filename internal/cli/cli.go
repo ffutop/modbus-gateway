@@ -26,7 +26,6 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/app"
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
-	"github.com/ffutop/modbus-gateway/web"
 )
 
 // Main runs the gateway with the command-line arguments args (without the
@@ -71,7 +70,7 @@ func Main(version string, args []string) {
 
 	slog.Info("Starting Modbus Gateway...")
 
-	// Telemetry only exists for the management console; without `ui` the
+	// Telemetry only exists for the management API; without `ui` the
 	// forwarding path is exactly what it was before.
 	var recorder *telemetry.Recorder
 	if cfg.UI.Enabled {
@@ -89,14 +88,11 @@ func Main(version string, args []string) {
 	rt.Start(ctx)
 
 	uiServer := startUI(cfg.UI, os.Getenv("MODMUX_UI_TOKEN"), announceUI, api.Deps{
-		Version:         version,
-		ConfigPath:      cfg.Path,
-		StartupRevision: cfg.Revision,
-		RunningConfig:   cfg,
-		Simulations:     rt.SortedSimulations(),
-		Telemetry:       recorder,
-		Upstreams:       rt.UpstreamStatuses,
-		Static:          web.Assets,
+		Version:     version,
+		ConfigPath:  cfg.Path,
+		Simulations: rt.SortedSimulations(),
+		Telemetry:   recorder,
+		Upstreams:   rt.UpstreamStatuses,
 	})
 
 	// Wait for a signal, or (sidecar mode) for stdin to close. Closing stdin

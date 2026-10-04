@@ -29,15 +29,10 @@ func (t *Tokens) File() []byte {
 		c := t.Color[i]
 		return []kv{{"name", c.Name}, {"ref", c.Ref}, {"use", c.Use}}
 	})
-	for _, g := range []struct {
-		key  string
-		vals []Value
-	}{{"alpha", t.Alpha}, {"shadow", t.Shadow}, {"font", t.Font}} {
-		vals := g.vals
-		list(&b, g.key, len(vals), func(i int) []kv {
-			return []kv{{"name", vals[i].Name}, {"value", vals[i].Value}, {"use", vals[i].Use}}
-		})
-	}
+	list(&b, "alpha", len(t.Alpha), func(i int) []kv {
+		a := t.Alpha[i]
+		return []kv{{"name", a.Name}, {"value", a.Value}, {"use", a.Use}}
+	})
 	for _, g := range []struct {
 		key  string
 		dims []Dimension
@@ -49,7 +44,6 @@ func (t *Tokens) File() []byte {
 	}
 	b.WriteString("  \"density\": {\n")
 	field(&b, 2, "$comment", t.Density.Comment, ",\n")
-	field(&b, 2, "web", t.Density.Web, ",\n")
 	field(&b, 2, "desktop-native", t.Density.DesktopNative, "\n")
 	b.WriteString("  }\n}\n")
 	return b.Bytes()

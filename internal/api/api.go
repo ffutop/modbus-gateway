@@ -2,23 +2,21 @@
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
-// Package api serves the management console's HTTP API. It only reads the
-// running gateways' state and reads/writes the config file; it never changes
-// how requests are forwarded.
+// Package api serves the management HTTP API that the desktop app reads from
+// its gateway child process: status, the request stream and simulation
+// registers. It only reads the running gateways' state; it never changes how
+// requests are forwarded or writes the config file.
 package api
 
 import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 
-	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
@@ -26,35 +24,17 @@ import (
 
 // Deps is everything the API reads from the running process.
 type Deps struct {
-	Version    string
-	ConfigPath string
-	// StartupRevision is the config file's revision when the process loaded
-	// it; the running gateways reflect exactly that content.
-	StartupRevision string
-	RunningConfig   *config.Config
-	Simulations     []*simulation.Simulation
-	Telemetry       *telemetry.Recorder
+	Version     string
+	ConfigPath  string
+	Simulations []*simulation.Simulation
+	Telemetry   *telemetry.Recorder
 	// Upstreams reports the listeners' states; nil reports none.
 	Upstreams func() []gateway.UpstreamStatus
-	// Static is the console front end, served at "/".
-	Static   fs.FS
-	identity *runtimeIdentity
-}
-
-// runtimeIdentity tracks revisions whose object order still matches startup.
-type runtimeIdentity struct {
-	sync.RWMutex
-	revision string
 }
 
 // NewHandler returns the handler for every /api/v1/ endpoint.
 func NewHandler(d Deps) http.Handler {
-	d.identity = &runtimeIdentity{revision: d.StartupRevision}
 	mux := http.NewServeMux()
-	running := runningTree(d.RunningConfig)
-	mux.HandleFunc("/api/v1/running-config", get(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, running)
-	}))
 	mux.HandleFunc("/api/v1/status", get(func(w http.ResponseWriter, r *http.Request) {
 		type simStatus struct {
 			Name    string `json:"name"`
@@ -70,32 +50,14 @@ func NewHandler(d Deps) http.Handler {
 			upstreams = append(upstreams, d.Upstreams()...)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"version":          d.Version,
-			"startup_revision": d.StartupRevision,
-			"config_path":      d.ConfigPath,
-			"simulations":      sims,
-			"upstreams":        upstreams,
+			"version":     d.Version,
+			"config_path": d.ConfigPath,
+			"simulations": sims,
+			"upstreams":   upstreams,
 		})
-	}))
-	mux.HandleFunc("/api/v1/metrics", get(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"gateways": d.Telemetry.Metrics()})
 	}))
 	mux.HandleFunc("/api/v1/events", get(func(w http.ResponseWriter, r *http.Request) {
 		streamEvents(w, r, d.Telemetry)
-	}))
-	mux.HandleFunc("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			serveConfig(w, d)
-		case http.MethodPut:
-			saveConfig(w, r, d)
-		default:
-			w.Header().Set("Allow", "GET, PUT")
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		}
-	})
-	mux.HandleFunc("/api/v1/config/validate", only(http.MethodPost, func(w http.ResponseWriter, r *http.Request) {
-		validateConfig(w, r, d)
 	}))
 	mux.HandleFunc("/api/v1/simulations/", get(func(w http.ResponseWriter, r *http.Request) {
 		name, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/simulations/"), "/registers")
@@ -111,24 +73,19 @@ func NewHandler(d Deps) http.Handler {
 		}
 		writeError(w, http.StatusNotFound, "simulation %q not found", name)
 	}))
-	if d.Static != nil {
-		mux.Handle("/", http.FileServer(http.FS(d.Static)))
-	}
 	return secureHeaders(mux)
 }
 
-// consolePolicy lets the console load only its own files and talk only to
-// its own origin. Inline style attributes are used by the page's templates;
-// scripts are never inline.
-const consolePolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+// apiPolicy forbids a browser from running, loading or framing anything
+// from an API response: it serves only data.
+const apiPolicy = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 
-// secureHeaders stops other sites from framing the console (clickjacking
+// secureHeaders stops other sites from framing API responses (clickjacking
 // on a loopback API without login) and browsers from sniffing content types.
 func secureHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hdr := w.Header()
-		hdr.Set("Content-Security-Policy", consolePolicy)
+		hdr.Set("Content-Security-Policy", apiPolicy)
 		hdr.Set("X-Frame-Options", "DENY")
 		hdr.Set("X-Content-Type-Options", "nosniff")
 		hdr.Set("Referrer-Policy", "no-referrer")

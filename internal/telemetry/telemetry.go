@@ -3,7 +3,8 @@
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
 // Package telemetry records what happens on the forwarding path for the
-// management console. It is in-memory debug data, cleared on restart; it is
+// management API and the desktop app. It is in-memory debug data, cleared on
+// restart; it is
 // not an audit log.
 package telemetry
 

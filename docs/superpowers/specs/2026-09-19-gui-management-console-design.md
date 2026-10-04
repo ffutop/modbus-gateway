@@ -2,7 +2,7 @@
 
 **日期：** 2026-09-19（2026-10-03 修订：按第一性原理精简；补齐配置写回与界面设计；新增 Electron 桌面版）
 **状态：** 作为 v0.6.0 详细设计、实现与验收的基线；2026-10-04 按用户授权落实界面审查修复，实际验证范围见交付说明。
-**变更（2026-10-04）：** Electron 桌面外壳（`desktop/`）已移除，桌面版只保留 Gio 原生实现 `desktop-native/`。本文中 Electron 外壳、安装包构建与 `build-desktop` 发布任务的内容（第 3、4 节中的桌面版路线，6.2、6.3、8 节及相关验收、待确认条目）仅作历史记录。6.1 节的服务端子进程协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）保留，作为原生桌面版后续子进程模式的基础，使界面渲染不影响转发。
+**变更（2026-10-04）：** 浏览器控制台（`web/`、`e2e/`）及其专用接口（`/api/v1/config`、`/api/v1/config/validate`、`/api/v1/running-config`、`/api/v1/metrics`）已移除，管理 API 只保留桌面版使用的 status、events、registers；本文中控制台界面、配置写回接口相关内容仅作历史记录。Electron 桌面外壳（`desktop/`）已移除，桌面版只保留 Gio 原生实现 `desktop-native/`。本文中 Electron 外壳、安装包构建与 `build-desktop` 发布任务的内容（第 3、4 节中的桌面版路线，6.2、6.3、8 节及相关验收、待确认条目）仅作历史记录。6.1 节的服务端子进程协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）保留，作为原生桌面版后续子进程模式的基础，使界面渲染不影响转发。
 **关联：**
 - [共享模拟数据模型配置契约 PRD](2026-09-19-shared-simulation-configuration-prd.md)：配置读写与展示的对象。
 - [本地模拟从站数据填充 PRD](2026-09-19-local-slave-simulation-data-injection-prd.md)：寄存器查看所依赖的数据模型。

@@ -18,23 +18,3 @@ jobs:
       # Not -race yet: transport/rtu's tests have a known pre-existing data race.
       - run: go test ./...
 
-  console:
-    name: Management console browser tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
-      - run: go build -o modbus-gateway .
-      - name: Run Playwright tests
-        working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-          npm test

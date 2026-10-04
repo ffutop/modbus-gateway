@@ -14,8 +14,8 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
 
-// eventBatchInterval is how often /api/v1/events pushes new requests. The
-// console only shows the latest rows that fit, so batching loses nothing.
+// eventBatchInterval is how often /api/v1/events pushes new requests; the
+// stream carries every buffered request, so batching loses nothing.
 const eventBatchInterval = 250 * time.Millisecond
 
 type eventView struct {

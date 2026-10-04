@@ -1,29 +1,14 @@
 # ModMux 设计规范
 
-ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营销页面。本规范约束两处界面，让它们看起来是同一个产品：
+ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营销页面。本规范约束 Gio 原生桌面版的界面：
 
 | 界面 | 位置 | 令牌文件（生成，勿手改） |
 |---|---|---|
-| 浏览器控制台 | `web/` | `web/tokens.css` |
-| Gio 原生桌面版 | `desktop-native/internal/ui` | `desktop-native/internal/ui/tokens_gen.go` |
+| Gio 原生桌面版 | `desktop-native/internal/ui`、`desktop-native/internal/workspace` | `desktop-native/internal/ui/tokens_gen.go`；`workspace` 在运行时读取 `design.Tokens` |
 
-**唯一来源是 `design/tokens.json`。** 修改有两种方式，结果相同，最后都要提交 `tokens.json` 和生成的文件：
+**唯一来源是 `design/tokens.json`。** 编辑 `tokens.json` 后运行 `go generate ./design`，提交 `tokens.json` 和生成的文件。效果用原生版的离屏截图测试查看（见“守卫”）。
 
-- **可视化调配**：在仓库根目录运行 `go run ./design/cmd/tokenstudio`，打开 http://127.0.0.1:7790/ 。
-- **手改 JSON**：编辑 `tokens.json`，然后运行 `go generate ./design`。
-
-## 令牌调配台
-
-调配台是一个本地页面，只监听回环地址。左侧编辑令牌，右侧实时预览：
-
-- **组件预览**：使用控制台真实的 `web/app.css` 渲染工作台、徽标、拓扑、寄存器、字号与圆角，草稿改动立即生效。
-- **语义颜色**：点击色块从色板中选色。如果这个色板颜色只被当前角色使用，可以直接跳到色板中调整；如果还被其他令牌共用，可以先复制出一个独立颜色，避免牵连其他角色。
-- **色板**：编辑色值和名称，增删颜色。每个颜色都标出被哪些令牌引用；重命名时，引用会自动跟随。
-- **字号与圆角**：调整设计尺寸和两端的缩放系数，并显示 Web 端的像素值和桌面端的 sp 值。
-- **对比度**：底栏实时检查全部对比度规则（与 `TestContrastRules` 是同一份 `design.ContrastRules`）。点击某条规则，会跳到对应颜色。
-- **保存并生成**（Ctrl+S）：服务端校验通过后，写入 `tokens.json`（固定格式，改一个令牌只产生一行 diff），并重新生成全部令牌文件。另外支持撤销、重做和放弃修改。
-
-语义颜色、字号和圆角的**名称**会被代码引用，调配台中只能改值；如需增删，请直接编辑 `tokens.json` 并同步修改代码。
+语义颜色、字号和圆角的**名称**会被代码引用；增删名称时同步修改代码。
 
 不在本规范范围内：GitHub Pages 站点（`docs/index.html`）、`docs/` 和 `desktop-native/prototype-ui` 下的原型。原型可以自由试验，验证通过的部分再回到令牌和组件清单。根目录的 `DESIGN.md` 是早期参考的 Cal.com 风格笔记，不是本产品规范。
 
@@ -82,7 +67,7 @@ ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营�
 
 ### 字号
 
-字号令牌是设计尺寸，各端渲染尺寸 = 设计尺寸 × 密度（`density`）。Web 的密度是 `--k = 1.12`（正文 14px），紧凑布局时调整 `--k`；Gio 端的密度是 1.04，结果四舍五入到 0.5sp。
+字号令牌是设计尺寸，渲染尺寸 = 设计尺寸 × 密度（`density.desktop-native`，当前 1.04），结果四舍五入到 0.5sp。
 
 | 令牌 | 设计尺寸 | 用途 |
 |---|---|---|
@@ -93,47 +78,43 @@ ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营�
 | `title` | 16 | 面板与对话框标题 |
 | `display` | 18 | KPI 数字 |
 
-CSS 中不要再写裸像素字号。裸像素字号不随 `--k` 缩放，紧凑布局时会失真。
+界面代码不要写裸字号，统一引用字号令牌。
 
 ### 圆角
 
 `xs` 3（键位提示）· `sm` 6（按钮、输入框、横幅）· `md` 8（分组框、KPI 卡）· `lg` 10（拓扑节点、对话框）· `pill`（徽标、分段控件；Gio 的 `rounded` 会把它收敛为半高）。
 
-### 阴影与遮罩
+### 遮罩
 
-只有两级阴影：`shadow-sm`（凸起的分段按钮、拓扑节点）和 `shadow-lg`（对话框）。遮罩只有两种：`scrim` 用于对话框，`scrim-strong` 是窗口过小时的阻断层。
+遮罩只有两种（`alpha` 令牌）：`scrim` 用于对话框，`scrim-strong` 是窗口过小时的阻断层。界面不使用阴影。
 
 ## 组件清单
 
 新增组件前先确认下列组件无法满足需求：
 
-| 组件 | Web 类名 | Gio | 需要覆盖的状态 |
-|---|---|---|---|
-| 按钮 | `.btn` / `.btn.pri` | `smallButton` | 悬停、禁用、焦点 |
-| 徽标 | `.badge(.ok/.warn/.err)` | `badge` | — |
-| 状态点 | `.dot(.warn/.err)` | — | — |
-| 表单字段 | `.field` + `.field-err` | — | 焦点、无效、只读、禁用 |
-| 表格 | `table.t`、`tr.bad` | `table.go` | 选中、失败行 |
-| 分段控件 | `.seg` | — | 选中 |
-| 分组框 / KPI | `.box` / `.kpi` | — | 数据过期 |
-| 树节点 | `.node` | 网关侧栏 | 悬停、选中、焦点 |
-| 标签栏 | `.dock-tabs` / `.tabs` | — | 选中 |
+| 组件 | Gio | 需要覆盖的状态 |
+|---|---|---|
+| 按钮 | `button`（workspace）/ `smallButton`（ui） | 悬停、禁用、焦点 |
+| 徽标 | `badge` | — |
+| 状态点 | `dot` | — |
+| 表格 | `table.go` | 选中、失败行 |
+| 标签 | `tab` / `chip` | 选中 |
+| 树节点 | 链路侧栏 | 悬停、选中 |
 
 ## 守卫
 
 以下检查都在根模块中，CI 的 `go test ./...` 会运行：
 
 - `TestGeneratedUpToDate`：生成文件与 `tokens.json` 不一致时失败。
-- `TestNoRawColors`：`web/app.{css,js}`、`index.html` 和 `desktop-native/internal/ui` 中出现裸色值（`#rrggbb`、`rgba(`、`rgb(0x…)`）时失败。
+- `TestNoRawColors`：`desktop-native/internal/ui` 中出现裸色值（`rgb(0x…)`、`color.NRGBA{R: 0x…}`）时失败。
 - `TestContrastRules`：对比度规则未达标时失败。
 - `TestFileRoundTrip`：`tokens.json` 不是固定格式时失败（运行 `go generate ./design` 即可修正）。
 - `tokens.json` 本身会校验：命名必须是 kebab-case、不允许未知字段、色板条目必须被引用。
 
-视觉回归方面，Web 端有 `e2e/` 中的布局溢出测试，Gio 端可运行 `UI_SNAPSHOT_DIR=… go test ./internal/ui -run Snapshot` 渲染截图。
+视觉回归：在 `desktop-native` 中运行 `WORKSPACE_SNAPSHOT_DIR=… go test ./internal/workspace -run TestWorkspaceSnapshots` 渲染工作台截图（常规／最小窗口、菜单、配置、YAML、启动失败、重启确认）。
 
 ## 尚未收敛
 
-- **间距**：现有 CSS 的内边距不完全在 4px 网格上，暂未令牌化。新代码使用 4 的倍数（2px 仅用于细微对齐）。
-- **布局尺寸**：控件高度和行高（26/24/38 × `--k`）仍写在 `app.css` 中，属于布局几何，不在令牌里。
+- **间距与布局尺寸**：内边距、控件高度和行高仍是代码中的局部常量，暂未令牌化。新代码使用 4 的倍数（2 仅用于细微对齐）。
 - **Gio 端部分尺寸**：如品牌字样 14sp、按钮内圆角 5dp，仍是局部常量。
 - **文档站**：是否并入本规范尚待决定，目前仍使用 Tailwind zinc 色板。

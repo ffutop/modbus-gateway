@@ -324,7 +324,7 @@ func TestSidecar_ShutsDownGracefullyAfterTheParentDied(t *testing.T) {
 
 func TestSidecar_OpenEventStreamDoesNotDelayShutdown(t *testing.T) {
 	sc := startSidecar(t, managementConfig(freePort(t), ""), nil, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof")
-	resp, err := http.Get("http://" + sc.addr + "/api/v1/events") // a console tab left open
+	resp, err := http.Get("http://" + sc.addr + "/api/v1/events") // a client left connected
 	if err != nil {
 		t.Fatal(err)
 	}

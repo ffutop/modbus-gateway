@@ -141,7 +141,7 @@ func (u *UI) toolbar(gtx C, snap store.Snapshot) D {
 	})
 }
 
-// smallButton is an outlined button in the console's style.
+// smallButton is an outlined button in the design system's style.
 func (th *Theme) smallButton(gtx C, btn *widget.Clickable, txt string) D {
 	bg := colCanvas
 	if btn.Hovered() {

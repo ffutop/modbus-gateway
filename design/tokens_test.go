@@ -49,16 +49,11 @@ func TestGeneratedUpToDate(t *testing.T) {
 }
 
 // Raw color literals outside the token files bypass the design system.
-var (
-	cssColor = regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b|\brgba?\(`)
-	goColor  = regexp.MustCompile(`\brgb\(0x[0-9a-fA-F]+\)|color\.NRGBA\{R:\s*0x`)
-)
+var goColor = regexp.MustCompile(`\brgb\(0x[0-9a-fA-F]+\)|color\.NRGBA\{R:\s*0x`)
 
-// TestNoRawColors keeps every color in the product UIs flowing from the tokens.
+// TestNoRawColors keeps every color in the desktop UI flowing from the tokens.
 func TestNoRawColors(t *testing.T) {
-	files := []string{
-		"web/app.css", "web/app.js", "web/index.html",
-	}
+	var files []string
 	native, _ := filepath.Glob(root("desktop-native/internal/ui/*.go"))
 	for _, f := range native {
 		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, "tokens_gen.go") {
@@ -74,12 +69,8 @@ func TestNoRawColors(t *testing.T) {
 			}
 			t.Fatal(err)
 		}
-		re := cssColor
-		if strings.HasSuffix(rel, ".go") {
-			re = goColor
-		}
 		for i, line := range strings.Split(string(data), "\n") {
-			if m := re.FindString(line); m != "" {
+			if m := goColor.FindString(line); m != "" {
 				t.Errorf("%s:%d: raw color %q; use a token from design/tokens.json", rel, i+1, m)
 			}
 		}

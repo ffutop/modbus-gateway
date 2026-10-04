@@ -31,8 +31,8 @@ type Problem struct {
 
 // Validate checks cross-cutting rules that can only be enforced once the
 // whole config has been parsed and normalized, and returns the first
-// violation. It is what LoadConfig enforces; see Problems for the list the
-// console shows.
+// violation. It is what LoadConfig enforces; see Problems for the full list
+// the desktop app's editor shows.
 func (c *Config) Validate() error {
 	if p := c.loadProblems(); len(p) > 0 {
 		return fmt.Errorf("%s", p[0].Message)

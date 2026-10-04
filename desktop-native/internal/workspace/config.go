@@ -249,7 +249,7 @@ func (e *configEditor) rebuild() {
 		set: func(v string) { c.UI.Enabled = v == "开启" }}
 	uiListen := strSpec("ui.listen", "监听地址", &c.UI.Listen)
 	uiListen.when, uiListen.check = func() bool { return c.UI.Enabled }, checkAddr
-	uiListen.hint = "Web 控制台与远程管理使用"
+	uiListen.hint = "管理 API 监听地址；桌面版自身不需要开启"
 	g.specs = []*spec{level, file, uiOn, uiListen}
 	nodes = append(nodes, g)
 

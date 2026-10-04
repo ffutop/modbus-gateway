@@ -146,7 +146,8 @@ type LogConfig struct {
 	File  string `mapstructure:"file"`  // Log file path
 }
 
-// UIConfig enables the management console's HTTP API. It is off unless
+// UIConfig enables the management HTTP API (what the desktop app reads). It
+// is off unless
 // explicitly enabled, so existing deployments open no new port.
 type UIConfig struct {
 	Enabled bool   `mapstructure:"enabled"`

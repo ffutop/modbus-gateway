@@ -639,7 +639,7 @@ gateways:
 	}
 }
 
-// Routing conflicts are reported by Problems (for the console, predicting
+// Routing conflicts are reported by Problems (for the editor, predicting
 // startup) but LoadConfig keeps accepting them: main.go has always reported
 // them itself while building routes, and the CLI's behavior must not change.
 func TestRouting_ProblemsPredictStartupWithoutChangingLoadConfig(t *testing.T) {

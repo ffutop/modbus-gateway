@@ -27,7 +27,7 @@ func rgb(c uint32) color.NRGBA {
 }
 
 // Colors, font sizes and radii are generated from design/tokens.json into
-// tokens_gen.go, so this UI and the web console stay one product.
+// tokens_gen.go; edit the tokens, not these files.
 const (
 	textSize  = fsBody
 	smallSize = fsCaption

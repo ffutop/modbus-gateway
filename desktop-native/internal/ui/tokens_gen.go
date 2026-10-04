@@ -4,7 +4,7 @@ package ui
 
 import "gioui.org/unit"
 
-// Colors, in the same roles as the web console's CSS custom properties.
+// Colors, by semantic role.
 var (
 	colInk         = rgb(0x111111)
 	colBody        = rgb(0x374151)

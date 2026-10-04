@@ -1,10 +1,5 @@
 modbus-gateway
 
-# Browser tests
-e2e/node_modules/
-e2e/test-results/
-e2e/playwright-report/
-
 # Native desktop app
 desktop-native/modmux-desktop
 desktop-native/modmux-desktop.exe

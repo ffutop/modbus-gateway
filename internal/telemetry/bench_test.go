@@ -34,7 +34,7 @@ func BenchmarkSinceNothingNew(b *testing.B) {
 	}
 }
 
-// BenchmarkMetrics is one /api/v1/metrics poll (every console polls once a second).
+// BenchmarkMetrics is one metrics snapshot (the desktop monitor takes one per poll).
 func BenchmarkMetrics(b *testing.B) {
 	r := fullRecorder()
 	b.ReportAllocs()
