@@ -7,6 +7,7 @@ replace github.com/ffutop/modbus-gateway => ../
 require (
 	gioui.org v0.10.3
 	github.com/ffutop/modbus-gateway v0.0.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -37,5 +38,4 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

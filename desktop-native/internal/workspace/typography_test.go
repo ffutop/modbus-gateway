@@ -1,4 +1,7 @@
-package main
+package workspace
+
+// Single-line text shares one line box and baseline whatever the glyphs, so
+// menus, toolbars and tables align at every scale (prototype round 8).
 
 import (
 	"gioui.org/layout"

@@ -10,7 +10,7 @@ ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营�
 
 语义颜色、字号和圆角的**名称**会被代码引用；增删名称时同步修改代码。
 
-不在本规范范围内：GitHub Pages 站点（`docs/index.html`）、`docs/` 和 `desktop-native/prototype-ui` 下的原型。原型可以自由试验，验证通过的部分再回到令牌和组件清单。根目录的 `DESIGN.md` 是早期参考的 Cal.com 风格笔记，不是本产品规范。
+不在本规范范围内：GitHub Pages 站点（`docs/index.html`）及 `docs/` 下的页面。根目录的 `DESIGN.md` 是早期参考的 Cal.com 风格笔记，不是本产品规范。
 
 ## 原则
 

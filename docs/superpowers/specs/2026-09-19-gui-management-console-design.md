@@ -6,7 +6,7 @@
 **关联：**
 - [共享模拟数据模型配置契约 PRD](2026-09-19-shared-simulation-configuration-prd.md)：配置读写与展示的对象。
 - [本地模拟从站数据填充 PRD](2026-09-19-local-slave-simulation-data-injection-prd.md)：寄存器查看所依赖的数据模型。
-- `docs/prototype-desktop-console.html`：界面原型（mock 数据，一次性代码），第 7 节的结论来源，前端落地后删除。
+- `docs/prototype-desktop-console.html`：界面原型（mock 数据，一次性代码），第 7 节的结论来源；已于 2026-10-04 删除，可从 git 历史查看。
 
 ---
 
