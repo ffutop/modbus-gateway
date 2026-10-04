@@ -1,27 +1,26 @@
 package workspace
 
 import (
-	"encoding/binary"
 	"fmt"
 	"time"
 
 	"gioui.org/op"
 	"gioui.org/op/paint"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/routing"
-	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
 
 const maxExchanges = 5000
 
-// World is a UI-owned projection of the running configuration and recorder.
-// Poll and Layout run on the window goroutine; simulations have their own locks.
+// World is a UI-owned projection of the running configuration and the live
+// source. Poll and Layout run on the window goroutine.
 type World struct {
 	Gateways     []*Gateway
 	Sims         []*Sim
-	models       map[string]*simulation.Simulation
-	recorder     *telemetry.Recorder
+	src          live.Source // nil shows no traffic
+	rt           live.Runtime
 	exchanges    []Exchange
 	head         int // next overwritten slot once history reaches capacity
 	cursor       uint64
@@ -37,8 +36,8 @@ type observation struct {
 	seen   [4][tableSize]time.Time
 }
 
-func newLiveWorld(cfg *config.Config, models map[string]*simulation.Simulation, rec *telemetry.Recorder) *World {
-	w := &World{models: models, recorder: rec, counts: map[Link][2]uint64{}, rates: map[Link]float64{}, observations: map[Link]*observation{}}
+func newLiveWorld(cfg *config.Config, src live.Source) *World {
+	w := &World{src: src, counts: map[Link][2]uint64{}, rates: map[Link]float64{}, observations: map[Link]*observation{}}
 	for _, s := range cfg.Simulations {
 		persist := s.Persistence.Type
 		if s.Persistence.Path != "" {
@@ -92,7 +91,11 @@ func (w *World) Poll(now time.Time) {
 	for k, v := range w.counts {
 		previous[k] = v
 	}
-	for _, e := range w.recorder.Since(w.cursor) {
+	if w.src == nil {
+		w.lastPoll = now
+		return
+	}
+	for _, e := range w.src.Since(w.cursor) {
 		if e.Seq <= w.cursor {
 			continue
 		}
@@ -244,34 +247,18 @@ func (w *World) Observed(l Link, t table) (values [tableSize]uint16, seen [table
 	return
 }
 
-func (w *World) Snapshot(name string, t table) (values [tableSize]uint16, changed [tableSize]time.Time) {
-	s := w.models[name]
-	if s == nil {
+// liveTables maps the workspace's tables to the source's.
+var liveTables = [...]live.Table{holding: live.Holding, input: live.Input, coils: live.Coils, discrete: live.Discrete}
+
+// Snapshot returns a model's current values; ok is false when the model is
+// unavailable. The model does not expose per-address write times.
+func (w *World) Snapshot(name string, t table) (values [tableSize]uint16, changed [tableSize]time.Time, ok bool) {
+	if w.src == nil {
 		return
 	}
-	var raw []byte
-	var err error
-	switch t {
-	case holding:
-		raw, err = s.Model.ReadHoldingRegisters(0, tableSize)
-	case input:
-		raw, err = s.Model.ReadInputRegisters(0, tableSize)
-	case coils:
-		raw, err = s.Model.ReadCoils(0, tableSize)
-	case discrete:
-		raw, err = s.Model.ReadDiscreteInputs(0, tableSize)
-	}
-	if err != nil {
-		return
-	}
-	for i := range values {
-		if t == coils || t == discrete {
-			values[i] = uint16(raw[i/8]>>uint(i%8)) & 1
-		} else {
-			values[i] = binary.BigEndian.Uint16(raw[i*2:])
-		}
-	}
-	return // model does not expose per-address write times
+	got, ok := w.src.Registers(name, liveTables[t], 0, tableSize)
+	copy(values[:], got)
+	return values, changed, ok && len(got) == tableSize
 }
 
 // UI is the production workspace. It never generates traffic.
@@ -282,20 +269,28 @@ type UI struct {
 }
 
 type Info struct {
-	Config      *config.Config
-	Content     string
-	Running     bool
-	StartErr    error
-	Recorder    *telemetry.Recorder
-	Simulations map[string]*simulation.Simulation
-	Save        func(string) error
+	Config   *config.Config
+	Content  string // the config file text the gateway was started with
+	Running  bool   // the gateway was started (or is starting) on Content
+	StartErr error
+	Source   live.Source  // nil shows no traffic
+	Runtime  live.Runtime // nil: a fixed state from Running and StartErr
+	Save     func(string) error
 }
 
 func New(info Info) *UI {
 	if info.Config == nil {
 		info.Config = &config.Config{}
 	}
-	w := newLiveWorld(info.Config, info.Simulations, info.Recorder)
+	if info.Runtime == nil {
+		st := live.State{Phase: live.Running}
+		if !info.Running {
+			st = live.State{Phase: live.Stopped, Err: info.StartErr}
+		}
+		info.Runtime = live.Fixed(st)
+	}
+	w := newLiveWorld(info.Config, info.Source)
+	w.rt = info.Runtime
 	th := NewTheme()
 	cfg := newConfigEditor(th, info)
 	v := newVariantC1(th, w, cfg)

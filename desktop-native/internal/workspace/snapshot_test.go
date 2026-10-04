@@ -13,6 +13,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
 
@@ -38,8 +39,8 @@ func TestWorkspaceSnapshots(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				r.Record(telemetry.Event{Time: base.Add(time.Duration(i-20) * time.Millisecond), Gateway: "demo", Downstream: "device", Source: "127.0.0.1:53124", SlaveID: 9, FunctionCode: 3, Address: 0, Quantity: 2, Request: []byte{3, 0, 0, 0, 2}, Response: []byte{3, 4, 0, 25, 0, 77}, Duration: 2 * time.Millisecond})
 			}
-			for _, state := range []string{"live", "menu", "config", "yaml", "startup-failed"} {
-				info := Info{Config: parsed(t, text), Content: text, Running: true, Recorder: r, Save: func(string) error { return nil }}
+			for _, state := range []string{"live", "menu", "config", "yaml", "startup-failed", "restart-confirm"} {
+				info := Info{Config: parsed(t, text), Content: text, Running: true, Source: live.Local{Recorder: r}, Save: func(string) error { return nil }}
 				if state == "startup-failed" {
 					info.Running = false
 					info.StartErr = errors.New("simulation model: failed to open persistence: permission denied")
@@ -51,6 +52,9 @@ func TestWorkspaceSnapshots(t *testing.T) {
 					xs := u.world.Exchanges(nil)
 					u.view.linked.selectRequest(xs[0])
 					u.view.linked.packets[xs[0].Seq] = true
+				}
+				if state == "restart-confirm" {
+					u.view.shell.confirming = true
 				}
 				if state == "menu" {
 					u.view.shell.menu = 1

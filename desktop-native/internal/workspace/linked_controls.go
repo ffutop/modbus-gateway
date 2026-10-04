@@ -13,6 +13,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget/material"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 )
 
 func requestColumns(gtx C, l Link, master string) [5]unit.Dp {
@@ -117,10 +118,14 @@ func (v *linkedView) registerPane(gtx C, l Link, xs []Exchange, reads, writes *[
 	model := sim != ""
 	vals, changed := v.world.Observed(l, v.table)
 	if model {
-		if v.world.models[sim] == nil {
-			return layout.Center.Layout(gtx, th.label("模型未启动；请检查配置与启动日志", textSize, colErr).Layout)
+		var ok bool
+		vals, changed, ok = v.world.Snapshot(sim, v.table)
+		if !ok && v.world.rt.State().Phase == live.Running {
+			return layout.Center.Layout(gtx, th.label("正在读取模型数据…", textSize, colMuted).Layout)
 		}
-		vals, changed = v.world.Snapshot(sim, v.table)
+		if !ok {
+			return layout.Center.Layout(gtx, th.label("网关未运行，模型数据不可用", textSize, colErr).Layout)
+		}
 	}
 	var historic [tableSize]string
 	lo, hi := -1, -1

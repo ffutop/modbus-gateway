@@ -13,6 +13,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 	gwapp "github.com/ffutop/modbus-gateway/internal/app"
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
@@ -66,7 +67,7 @@ func parsed(t *testing.T, text string) *config.Config {
 func TestLiveProjectionRetainsPerSlaveReadEvidence(t *testing.T) {
 	c := parsed(t, liveConfig("127.0.0.1:15020"))
 	r := telemetry.NewRecorder(8)
-	w := newLiveWorld(c, nil, r)
+	w := newLiveWorld(c, live.Local{Recorder: r})
 	g, d := w.Gateways[0], w.Gateways[0].Downstreams[2]
 	if d.Observed {
 		t.Fatal("configured device presented as observed")
@@ -113,7 +114,7 @@ func TestLiveProjectionRetainsPerSlaveReadEvidence(t *testing.T) {
 }
 
 func TestLiveProjectionBoundsHistoryAndReportsLoss(t *testing.T) {
-	w := newLiveWorld(parsed(t, liveConfig("127.0.0.1:15020")), nil, nil)
+	w := newLiveWorld(parsed(t, liveConfig("127.0.0.1:15020")), nil)
 	for i := 0; i < maxExchanges+20; i++ {
 		w.record(telemetry.Event{Seq: uint64(i + 1), Gateway: "demo", Source: fmt.Sprint(i), FunctionCode: 3})
 	}
@@ -124,7 +125,7 @@ func TestLiveProjectionBoundsHistoryAndReportsLoss(t *testing.T) {
 		t.Fatal("wrong eviction order")
 	}
 	r := telemetry.NewRecorder(2)
-	w = newLiveWorld(parsed(t, liveConfig("127.0.0.1:15020")), nil, r)
+	w = newLiveWorld(parsed(t, liveConfig("127.0.0.1:15020")), live.Local{Recorder: r})
 	for i := 0; i < 5; i++ {
 		r.Record(telemetry.Event{Gateway: "demo"})
 	}
@@ -177,17 +178,17 @@ func TestDesktopReadsRealLocalAndInjectorTraffic(t *testing.T) {
 	if _, err := client.Send(ctx, 1, request); err != nil {
 		t.Fatal(err)
 	}
-	w := newLiveWorld(c, a.Simulations, r)
+	w := newLiveWorld(c, live.Local{Recorder: r, Simulations: a.Simulations})
 	w.Poll(time.Now())
 	xs := w.Exchanges(nil)
 	if len(xs) != 3 || xs[0].Ds.Name != "local" || xs[1].Ds.Name != "injector" || xs[2].Source == "" {
 		t.Fatalf("bad real telemetry: %+v", xs)
 	}
-	values, _ := w.Snapshot("model", input)
-	if values[16] != 77 {
+	values, _, ok := w.Snapshot("model", input)
+	if !ok || values[16] != 77 {
 		t.Fatalf("injector target = %d", values[16])
 	}
-	values, _ = w.Snapshot("model", holding)
+	values, _, _ = w.Snapshot("model", holding)
 	if values[0] != 25 {
 		t.Fatal("injector modified source table")
 	}

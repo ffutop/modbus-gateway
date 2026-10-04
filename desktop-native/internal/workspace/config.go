@@ -480,6 +480,11 @@ func (e *configEditor) errorCount() int {
 
 // ---- frame ----
 
+// unsaved reports edits not yet written to the file.
+func (e *configEditor) unsaved() bool {
+	return len(e.changes()) > 0 || e.raw && e.rawEd.Text() != e.savedYAML
+}
+
 func (e *configEditor) Layout(gtx C) D {
 	th := e.th
 	e.update(gtx)
@@ -498,7 +503,7 @@ func (e *configEditor) Layout(gtx C) D {
 			e.toast, e.toastAt = "保存失败，草稿和运行配置保留。", gtx.Now
 		} else {
 			e.saveFailed, e.saveProblem = false, ""
-			e.toast, e.toastAt = "已保存。重启应用后使用新配置。", gtx.Now
+			e.toast, e.toastAt = "已保存。重启网关后使用新配置。", gtx.Now
 		}
 	}
 
@@ -724,7 +729,7 @@ func (e *configEditor) toolbar(gtx C, changes []change, errs int, canSave bool) 
 				return th.button(gtx, &e.save, "保存", false)
 			}),
 			gap(8),
-			layout.Rigid(th.label("重启应用后生效", smallSize, colMuted).Layout),
+			layout.Rigid(th.label("重启网关后生效", smallSize, colMuted).Layout),
 		}
 		if gtx.Constraints.Max.X < gtx.Dp(1200) {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx C) D { return row(gtx, 40, children[:7]...) }), layout.Rigid(func(gtx C) D { return row(gtx, 40, children[7:]...) }))
