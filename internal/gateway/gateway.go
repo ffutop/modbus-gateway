@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/internal/routing"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 	"github.com/ffutop/modbus-gateway/modbus"
 	"github.com/ffutop/modbus-gateway/transport"
@@ -90,14 +89,6 @@ func NewGateway(name string, upstreams []transport.Upstream, routes map[byte]tra
 		Routes:       routes,
 		DefaultRoute: defaultRoute,
 	}
-}
-
-// ParseSlaveIDs parses a string of slave IDs (e.g. "1,2,5-10") into a slice of bytes.
-//
-// Deprecated: use internal/routing.ParseSlaveIDs directly. Kept as a thin
-// delegate for existing call sites.
-func ParseSlaveIDs(input string) ([]byte, error) {
-	return routing.ParseSlaveIDs(input)
 }
 
 // Start starts all upstream servers and the downstream connection

@@ -17,6 +17,7 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
+	"github.com/ffutop/modbus-gateway/internal/routing"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 	"github.com/ffutop/modbus-gateway/transport"
@@ -102,7 +103,7 @@ func (a *App) newGateway(gwCfg config.GatewayConfig) (*gateway.Gateway, error) {
 			}
 			names[ds] = dsCfg.DisplayName(i)
 
-			ids, err := gateway.ParseSlaveIDs(dsCfg.SlaveIDs)
+			ids, err := routing.ParseSlaveIDs(dsCfg.SlaveIDs)
 			if err != nil {
 				return nil, fmt.Errorf("gateway %q: parse slave IDs %q: %w", gwCfg.Name, dsCfg.SlaveIDs, err)
 			}
