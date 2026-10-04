@@ -46,6 +46,7 @@ type linkedView struct {
 	onlyErrors                      bool
 
 	clearMaster bool
+	cache       trafficCache
 	traffic     widget.List
 	regList     widget.List
 	slaveList   widget.List
@@ -128,33 +129,64 @@ func (v *linkedView) Layout(gtx C, l Link, showMasters bool, detail detailFunc) 
 	}
 	registerLink := l
 	registerLink.Master = ""
-	registerEvents := v.world.Exchanges(registerLink.Match)
 	// Keep an expanded request in view instead of following new traffic.
 	v.traffic.ScrollToEnd = v.sel == 0 && !v.paused
 
-	all := v.world.Exchanges(l.Match)
-	var reads, writes [tableSize]int
-	shown := all[:0:0]
-	for i := range all {
-		x := &all[i]
+	c := v.projection(l)
+	return layout.Flex{}.Layout(gtx,
+		layout.Flexed(0.58, func(gtx C) D { return v.trafficPane(gtx, l, showMasters, c.shown, c.total, detail) }),
+		layout.Rigid(func(gtx C) D { return vline(gtx, colHair) }),
+		layout.Flexed(0.42, func(gtx C) D { return v.registerPane(gtx, registerLink, &c.reads, &c.writes) }),
+	)
+}
+
+// trafficCache is the link's requests as the panes show them. It is rebuilt
+// only when the history or the filters change, not on every frame.
+type trafficCache struct {
+	key           trafficKey
+	valid         bool
+	shown         []*Exchange // into the World's history, oldest first
+	total         int         // requests on the link before filtering
+	reads, writes [tableSize]int
+}
+
+type trafficKey struct {
+	link       Link
+	table      table
+	reg        int
+	onlyErrors bool
+	gen        uint64
+}
+
+// projection returns the cached projection of link l, rebuilding it if stale.
+func (v *linkedView) projection(l Link) *trafficCache {
+	c := &v.cache
+	key := trafficKey{link: l, table: v.table, reg: v.reg, onlyErrors: v.onlyErrors, gen: v.world.gen}
+	if c.valid && c.key == key {
+		return c
+	}
+	c.key, c.valid = key, true
+	c.shown, c.total = c.shown[:0], 0
+	c.reads, c.writes = [tableSize]int{}, [tableSize]int{}
+	v.world.Each(func(x *Exchange) {
+		if !l.Match(x) {
+			return
+		}
+		c.total++
 		if t, start, count, ok := affectedRange(x); ok && t == v.table && x.Err == nil {
 			for a := start; a < start+count && a < tableSize; a++ {
 				if isWrite(x.FunctionCode) {
-					writes[a]++
+					c.writes[a]++
 				} else {
-					reads[a]++
+					c.reads[a]++
 				}
 			}
 		}
 		if (!v.onlyErrors || failed(&x.Event)) && (v.reg < 0 || touches(x, v.table, v.reg)) {
-			shown = append(shown, *x)
+			c.shown = append(c.shown, x)
 		}
-	}
-	return layout.Flex{}.Layout(gtx,
-		layout.Flexed(0.58, func(gtx C) D { return v.trafficPane(gtx, l, showMasters, shown, len(all), detail) }),
-		layout.Rigid(func(gtx C) D { return vline(gtx, colHair) }),
-		layout.Flexed(0.42, func(gtx C) D { return v.registerPane(gtx, registerLink, registerEvents, &reads, &writes) }),
-	)
+	})
+	return c
 }
 
 func (v *linkedView) trafficRow(gtx C, l Link, x *Exchange, detail detailFunc) D {

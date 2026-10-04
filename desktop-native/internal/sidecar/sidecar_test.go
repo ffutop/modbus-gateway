@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,13 +67,16 @@ gateways:
 	return path
 }
 
+// notified counts the supervisor's repaint requests.
+var notified atomic.Int64
+
 func newSupervisor(t *testing.T, config string) *Supervisor {
 	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewSupervisor(exe, config, nil)
+	s := NewSupervisor(exe, config, func() { notified.Add(1) })
 	t.Cleanup(s.Stop)
 	return s
 }
@@ -114,7 +118,9 @@ func TestSidecarServesTrafficRegistersAndListenerState(t *testing.T) {
 	if _, err := client.Send(ctx, 1, modbus.ProtocolDataUnit{FunctionCode: 6, Data: []byte{0, 3, 0, 42}}); err != nil {
 		t.Fatal(err)
 	}
+	before := notified.Load()
 	eventually(t, "the write event", func() bool { return len(s.Since(0)) == 1 })
+	eventually(t, "a repaint request for the new request", func() bool { return notified.Load() > before })
 	e := s.Since(0)[0]
 	if e.Gateway != "demo" || e.Downstream != "local" || e.SlaveID != 1 || e.Err != nil ||
 		fmt.Sprintf("% x", e.Request) != "06 00 03 00 2a" || fmt.Sprintf("% x", e.Response) != "06 00 03 00 2a" || e.Time.IsZero() {

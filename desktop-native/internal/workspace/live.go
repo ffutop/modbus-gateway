@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"gioui.org/op"
@@ -12,7 +13,11 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
 
-const maxExchanges = 5000
+const (
+	maxExchanges = 5000
+	pollInterval = 100 * time.Millisecond // while requests arrive
+	idleRefresh  = time.Second            // otherwise
+)
 
 // World is a UI-owned projection of the running configuration and the live
 // source. Poll and Layout run on the window goroutine.
@@ -25,7 +30,9 @@ type World struct {
 	head         int // next overwritten slot once history reaches capacity
 	cursor       uint64
 	missed       uint64
+	gen          uint64 // changes whenever the history changes
 	lastPoll     time.Time
+	lastTraffic  time.Time // the last poll that brought requests
 	counts       map[Link][2]uint64
 	rates        map[Link]float64
 	observations map[Link]*observation
@@ -104,6 +111,7 @@ func (w *World) Poll(now time.Time) {
 		}
 		w.cursor = e.Seq
 		w.record(e)
+		w.lastTraffic = now
 	}
 	if dt := now.Sub(w.lastPoll).Seconds(); !w.lastPoll.IsZero() && dt > 0 {
 		for k, c := range w.counts {
@@ -124,6 +132,7 @@ func (w *World) record(e telemetry.Event) {
 	if g == nil {
 		return
 	}
+	w.gen++
 	x := Exchange{Event: e, Gw: g}
 	for _, d := range g.Downstreams {
 		if e.Downstream != "" && d.Name == e.Downstream {
@@ -157,7 +166,8 @@ func (w *World) record(e telemetry.Event) {
 	} else {
 		w.exchanges = append(w.exchanges, x)
 	}
-	keys := []Link{{Gw: g}, {Gw: g, Ds: x.Ds}}
+	var buf [6]Link // stays on the stack: record runs once per request
+	keys := append(buf[:0], Link{Gw: g}, Link{Gw: g, Ds: x.Ds})
 	for _, m := range g.Masters {
 		if m == e.Source {
 			keys = append(keys, Link{Gw: g, Master: m}, Link{Gw: g, Master: m, Ds: x.Ds})
@@ -167,13 +177,11 @@ func (w *World) record(e telemetry.Event) {
 	if x.Ds != nil && x.Ds.Sim != "" {
 		keys = append(keys, Link{Sim: x.Ds.Sim}, Link{Gw: g, Sim: x.Ds.Sim})
 	}
-	// Count the empty-downstream gateway key just once.
-	seen := map[Link]bool{}
-	for _, k := range keys {
-		if seen[k] {
+	for i, k := range keys {
+		// Count the empty-downstream gateway key just once.
+		if slices.Contains(keys[:i], k) {
 			continue
 		}
-		seen[k] = true
 		c := w.counts[k]
 		c[0]++
 		if failed(&e) {
@@ -211,6 +219,21 @@ func (w *World) sim(name string) *Sim {
 	return nil
 }
 
+// Each calls fn on the history, oldest first, without copying it. The
+// pointers stay valid until the history changes (see gen).
+func (w *World) Each(fn func(*Exchange)) {
+	for i := range w.exchanges {
+		fn(&w.exchanges[(w.head+i)%len(w.exchanges)])
+	}
+}
+
+// active reports whether requests arrived recently, so the view should keep
+// refreshing rates and rows at full pace.
+func (w *World) active(now time.Time) bool {
+	return !w.lastTraffic.IsZero() && now.Sub(w.lastTraffic) < 2*time.Second
+}
+
+// Exchanges returns a copy of the matching history, oldest first.
 func (w *World) Exchanges(keep func(*Exchange) bool) []Exchange {
 	out := make([]Exchange, 0, len(w.exchanges))
 	for i := range w.exchanges {
@@ -299,7 +322,7 @@ func New(info Info) *UI {
 
 func (u *UI) Layout(gtx C) D {
 	paint.Fill(gtx.Ops, colCanvas)
-	if u.world.lastPoll.IsZero() || gtx.Now.Sub(u.world.lastPoll) >= 100*time.Millisecond {
+	if u.world.lastPoll.IsZero() || gtx.Now.Sub(u.world.lastPoll) >= pollInterval {
 		u.world.Poll(gtx.Now)
 	}
 	if len(u.world.exchanges) > 0 {
@@ -317,6 +340,12 @@ func (u *UI) Layout(gtx C) D {
 			}
 		}
 	}
-	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(100 * time.Millisecond)})
+	// Poll at full pace while traffic flows; when idle, a slow heartbeat keeps
+	// ages current, and the source wakes the window when data arrives.
+	next := idleRefresh
+	if u.world.active(gtx.Now) {
+		next = pollInterval
+	}
+	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(next)})
 	return u.view.Layout(gtx)
 }

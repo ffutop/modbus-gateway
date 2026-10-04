@@ -84,7 +84,7 @@ func (s *Supervisor) launch(restart bool) {
 		s.notify()
 		return
 	}
-	s.proc, s.client = p, NewClient(p.URL, p.Token)
+	s.proc, s.client = p, NewClient(p.URL, p.Token, s.notify)
 	s.state.Phase = live.Running
 	if restart {
 		s.state.Epoch++

@@ -31,7 +31,7 @@ func requestColumns(gtx C, l Link, master string) [5]unit.Dp {
 	return [5]unit.Dp{94, path, 112, 76, 66}
 }
 
-func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []Exchange, total int, detail detailFunc) D {
+func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []*Exchange, total int, detail detailFunc) D {
 	th := v.th
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
@@ -100,13 +100,13 @@ func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []Exchange,
 				if i == v.traffic.Position.First && v.traffic.Position.Offset > 0 && v.traffic.Position.Offset < gtx.Dp(24) {
 					defer clip.Rect{Min: image.Pt(0, gtx.Dp(24)), Max: image.Pt(gtx.Constraints.Max.X, 1<<20)}.Push(gtx.Ops).Pop()
 				}
-				return v.trafficRow(gtx, l, &xs[i], detail)
+				return v.trafficRow(gtx, l, xs[i], detail)
 			})
 		}),
 	)
 }
 
-func (v *linkedView) registerPane(gtx C, l Link, xs []Exchange, reads, writes *[tableSize]int) D {
+func (v *linkedView) registerPane(gtx C, l Link, reads, writes *[tableSize]int) D {
 	th := v.th
 	sim := l.Sim
 	if l.Ds != nil {

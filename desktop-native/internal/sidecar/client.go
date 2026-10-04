@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -38,6 +39,7 @@ type Client struct {
 	base, token string
 	http        *http.Client
 	cancel      context.CancelFunc
+	notify      func() // new requests or listener states arrived
 
 	mu        sync.Mutex
 	events    []telemetry.Event // ascending Seq
@@ -58,10 +60,15 @@ type cached struct {
 	wanted time.Time
 }
 
-// NewClient starts following the API at base until Close.
-func NewClient(base, token string) *Client {
+// NewClient starts following the API at base until Close. notify, if not
+// nil, is called when new requests or listener states arrive, so an idle
+// window repaints only when there is something new.
+func NewClient(base, token string, notify func()) *Client {
+	if notify == nil {
+		notify = func() {}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Client{base: base, token: token, http: &http.Client{}, cancel: cancel, windows: map[window]*cached{}}
+	c := &Client{base: base, token: token, http: &http.Client{}, cancel: cancel, notify: notify, windows: map[window]*cached{}}
 	go c.follow(ctx)
 	go c.poll(ctx)
 	return c
@@ -195,16 +202,21 @@ func (c *Client) stream(ctx context.Context) {
 			continue
 		}
 		c.mu.Lock()
+		added := false
 		for i := range batch {
 			if batch[i].Seq > c.last {
 				c.last = batch[i].Seq
 				c.events = append(c.events, batch[i].event())
+				added = true
 			}
 		}
 		if len(c.events) > maxEvents {
 			c.events = append(c.events[:0:0], c.events[len(c.events)-maxEvents:]...)
 		}
 		c.mu.Unlock()
+		if added {
+			c.notify()
+		}
 	}
 }
 
@@ -225,8 +237,12 @@ func (c *Client) poll(ctx context.Context) {
 					status.Upstreams = []gateway.UpstreamStatus{}
 				}
 				c.mu.Lock()
+				changed := c.upstreams == nil || !slices.Equal(c.upstreams, status.Upstreams)
 				c.upstreams = status.Upstreams
 				c.mu.Unlock()
+				if changed {
+					c.notify()
+				}
 			}
 		}
 		c.refreshWindows(ctx)
