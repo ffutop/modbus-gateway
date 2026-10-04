@@ -87,6 +87,57 @@ jobs:
           name: ${{ env.ARCHIVE_NAME }}${{ env.ARCHIVE_EXT }}
           path: ${{ env.ARCHIVE_NAME }}${{ env.ARCHIVE_EXT }}
 
+  build-desktop:
+    name: Build Desktop App (${{ matrix.goos }} ${{ matrix.arches }})
+    # Gio needs CGO on macOS and Linux. A Mac builds both macOS architectures
+    # with clang; Ubuntu 22.04 (an older glibc baseline) builds Linux amd64 and
+    # cross-compiles arm64 against multiarch libraries. Windows needs no CGO.
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { goos: darwin, script: macos, arches: "amd64 arm64", runner: macos-latest }
+          - { goos: windows, script: windows, arches: "amd64 arm64", runner: ubuntu-latest }
+          - { goos: linux, script: linux, arches: "amd64 arm64", runner: ubuntu-22.04 }
+    defaults:
+      run:
+        working-directory: desktop-native
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: desktop-native/go.sum
+
+      - name: Install Linux build dependencies
+        if: matrix.goos == 'linux'
+        run: sudo ./scripts/install-linux-deps.sh arm64
+
+      - name: Package
+        env:
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
+          SCRIPT: ./scripts/package-${{ matrix.script }}.sh
+          ARCHES: ${{ matrix.arches }}
+        run: |
+          for arch in $ARCHES; do
+            GOARCH=$arch "$SCRIPT" dist
+          done
+
+      - name: Upload artifact for release
+        uses: actions/upload-artifact@v4
+        with:
+          name: modmux-desktop-${{ matrix.goos }}
+          path: |
+            desktop-native/dist/modmux-desktop-*.zip
+            desktop-native/dist/modmux-desktop-*.tar.gz
+          if-no-files-found: error
+
   build-and-push-docker:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
@@ -132,7 +183,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-binaries, build-and-push-docker]
+    needs: [build-binaries, build-desktop, build-and-push-docker]
     runs-on: ubuntu-latest
     permissions:
       contents: write

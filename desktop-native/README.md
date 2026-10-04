@@ -36,28 +36,38 @@ go build -o modmux-desktop .
 
 界面字体链为 `Go, Noto Sans SC`，等宽字体链为 `Go Mono, Noto Sans SC`。Noto Sans SC 常规与粗体通过 Go embed 打包，原生界面和原型共用，字号保持 13 / 11.5 / 12。字体来自 [Noto 官方仓库](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/SC)，许可见 `internal/uifont/assets/OFL.txt`。
 
-## macOS 应用打包
+## 打包与发布
 
-在 macOS 上执行一次构建：
+`scripts/` 下每个平台一个打包脚本，环境变量 `VERSION`（写入程序的版本，默认 `dev`）与 `GOARCH`（`amd64` 或 `arm64`，默认 Go 工具链的架构）选择版本与架构，参数为输出目录（默认 `dist`）。产物为 `dist/modmux-desktop-<goos>-<goarch>.<zip|tar.gz>`，解包内容留在 `dist/<goos>-<goarch>/`。
+
+| 脚本 | 构建主机 | 产物 |
+|---|---|---|
+| `package-macos.sh` | macOS（Xcode 命令行工具）；同一台 Mac 构建两种架构 | `ModMux.app` 的 zip，ad-hoc 签名并校验 |
+| `package-windows.sh` | 任意（不需要 CGO） | 含 `modmux-desktop.exe` 的 zip，窗口程序，双击不弹出控制台 |
+| `package-linux.sh` | Ubuntu／Debian，先以 `sudo ./scripts/install-linux-deps.sh [arm64]` 安装开发包；目标架构与主机不同时自动使用多架构库与交叉编译器 | 含 `modmux-desktop` 的 tar.gz |
 
 ```bash
 cd desktop-native
-./scripts/package-macos.sh
+VERSION=v0.6.1 GOARCH=arm64 ./scripts/package-macos.sh
 ```
 
-生成 `dist/ModMux.app`，可从 Finder 双击；将它拖入“应用程序”后，可从启动台（旧版 macOS）或 Spotlight 的“应用”视图（macOS 26）打开，也可固定到 Dock。运行不需要终端或 Go 工具链。脚本只构建当前 Mac 的架构，并执行本地 ad-hoc 签名与签名校验；尚未做 Developer ID 签名、公证或跨架构发布。
+推送 `v*.*.*` 标签时，发布流水线（`.github/workflows/release.yaml` 的 `build-desktop`）在 macOS 与 Ubuntu runner 上生成全部 6 个包，与命令行版一同上传到 GitHub Release：macOS 两种架构都在 Mac 上构建，Windows 与 Linux arm64 在 amd64 的 Ubuntu 22.04 上交叉编译。Linux 包运行时需要系统提供 EGL、Wayland（client、cursor、egl）、X11（含 x11-xcb）、xkbcommon（含 x11）、Xcursor 与 Xfixes 的运行库，桌面发行版通常已自带。macOS 包只有 ad-hoc 签名，尚未做 Developer ID 签名与公证，下载后首次打开会被 Gatekeeper 拦截；Windows 包未做 Authenticode 签名，也没有图标与版本资源。
 
-应用图标采用开发工具风格的蓝色几何折带 M，以中央交汇表达汇聚与分流，外侧透明。源 PNG、macOS `.icns` 及设计提示词见 [packaging/macos/ICON.md](packaging/macos/ICON.md)，打包时自动装入应用资源。
+macOS 的 `ModMux.app` 可从 Finder 双击；将它拖入“应用程序”后，可从启动台（旧版 macOS）或 Spotlight 的“应用”视图（macOS 26）打开，也可固定到 Dock。运行不需要终端或 Go 工具链。应用图标采用开发工具风格的蓝色几何折带 M，以中央交汇表达汇聚与分流，外侧透明。源 PNG、macOS `.icns` 及设计提示词见 [packaging/macos/ICON.md](packaging/macos/ICON.md)，打包时自动装入应用资源。
 
-首次从应用包启动时会创建：
+### 首次启动
 
-- 配置：`~/Library/Application Support/ModMux/config.yaml`
-- 日志：`~/Library/Logs/ModMux/desktop.log`
-- 相对持久化路径的工作目录：`~/Library/Application Support/ModMux/`
+macOS 应用包，或旁边带有 `config.default.yaml` 的 Windows／Linux 可执行文件（即解压后的发布包），在未指定 `-config` 时按打包应用启动，首次启动以该示例创建用户配置：
 
-默认配置为 memory 模型，在 `127.0.0.1:15020` 提供 Slave ID 1。可在应用内编辑，或退出应用后把工程配置复制到上述用户配置文件；更新／替换应用包不会覆盖已有用户配置。工程中的 `config.yaml` 不会被自动打包。显式使用 `-config` 的命令行启动继续沿用原有路径语义。
+| 平台 | 配置（同时是相对持久化路径的工作目录） | 日志 |
+|---|---|---|
+| macOS | `~/Library/Application Support/ModMux/config.yaml` | `~/Library/Logs/ModMux/desktop.log` |
+| Windows | `%APPDATA%\ModMux\config.yaml` | `%LOCALAPPDATA%\ModMux\Logs\desktop.log` |
+| Linux | `$XDG_CONFIG_HOME/modmux/config.yaml`（默认 `~/.config`） | `$XDG_STATE_HOME/modmux/desktop.log`（默认 `~/.local/state`） |
 
-打包结构及启动方式参见 [Apple Bundle 文档](https://developer.apple.com/library/archive/documentation/CoreFoundation/Conceptual/CFBundles/BundleTypes/BundleTypes.html)与 [Spotlight 应用视图说明](https://support.apple.com/guide/mac-help/open-apps-in-spotlight-mh35840/mac)。
+默认配置为 memory 模型，在 `127.0.0.1:15020` 提供 Slave ID 1。可在应用内编辑，或退出应用后把工程配置复制到上述用户配置文件；更新／替换应用不会覆盖已有用户配置。工程中的 `config.yaml` 不会被自动打包。显式使用 `-config` 的命令行启动，以及旁边没有 `config.default.yaml` 的可执行文件（如 `go build` 的产物），继续沿用原有路径语义。
+
+打包结构及启动方式参见 [Apple Bundle 文档](https://developer.apple.com/library/archive/documentation/CoreFoundation/Conceptual/CFBundles/BundleTypes/BundleTypes.html)、[Spotlight 应用视图说明](https://support.apple.com/guide/mac-help/open-apps-in-spotlight-mh35840/mac)与 [XDG Base Directory 规范](https://specifications.freedesktop.org/basedir-spec/latest/)。
 
 ## 目录
 
@@ -69,8 +79,8 @@ cd desktop-native
 | `design` | 设计令牌唯一来源 `tokens.json`、对比度规则与生成器；规范见 [design/README.md](design/README.md) |
 | `internal/workspace` | 唯一界面：菜单、拓扑、链路／请求／模型联动、配置编辑；仅投影真实运行数据。`tokens_gen.go` 由 `go generate ./design` 生成 |
 | `internal/configfile` | 原文配置读取、校验、版本冲突检测及原子保存 |
-| `internal/launch` | 应用包启动的用户配置、工作目录与日志路径 |
-| `scripts/package-macos.sh` | 构建并校验 macOS `.app` |
+| `internal/launch` | 打包应用（macOS 应用包、Windows／Linux 发布包）启动时的用户配置、工作目录与日志路径 |
+| `scripts/package-*.sh`、`packaging/` | 三个平台的打包脚本；`packaging/config.default.yaml` 为各平台共用的首次启动示例 |
 | `internal/decode` | Modbus PDU 字段解码，每个字段对应它在 PDU 中的字节区间 |
 
 ## 测试

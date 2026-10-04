@@ -1,5 +1,7 @@
 # First-launch local demo. Editable copy lives in:
-# ~/Library/Application Support/ModMux/config.yaml
+#   macOS:   ~/Library/Application Support/ModMux/config.yaml
+#   Windows: %APPDATA%\ModMux\config.yaml
+#   Linux:   ${XDG_CONFIG_HOME:-~/.config}/modmux/config.yaml
 version: 1
 log:
   level: info

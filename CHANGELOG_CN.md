@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 原生桌面版预览（`desktop-native/`，基于 Gio）：提供桌面菜单、链路拓扑、请求／寄存器监视与可视化／YAML 配置编辑。网关在同一可执行文件启动的子进程中运行（子进程模式），界面渲染不与转发共用运行时，任一侧崩溃都会被报告而不会拖垮另一侧；关闭窗口即停止网关。保存执行校验与外部修改冲突检测，失败保留草稿；工具栏可在确认中断影响后重启网关，使保存的配置生效。状态栏显示网关正在启动、运行中或已停止（附最后几行输出），以及各上游监听状态。它是独立的 Go 模块，需要 Go 1.24 及以上；根模块仍保持 Go 1.21。
 - macOS 应用包打包，包含几何风格 ModMux 图标、首次启动的私有配置、用户目录日志和打包的 Go／Noto Sans SC 字体。
+- 桌面版发布覆盖 macOS、Windows、Linux 的 amd64 与 arm64：打标签发布时，`modmux-desktop-<os>-<arch>` 压缩包与命令行版一同上传，由 `desktop-native/scripts/` 下各平台的打包脚本构建并写入发布版本号。解压后的 Windows 与 Linux 包在首次启动时于平台用户目录创建配置与日志（`%APPDATA%`／`%LOCALAPPDATA%`，或 XDG 配置与状态目录）。
 - 遥测事件新增原始请求与响应 PDU。
 - 管理 API：`/api/v1/events` 以十六进制提供每个请求的 `request` 与 `response` PDU；`/api/v1/status` 列出每个上游监听的状态（`starting`、`listening`、附错误的 `failed` 或 `stopped`）。
 

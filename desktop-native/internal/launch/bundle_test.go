@@ -66,3 +66,77 @@ func TestCLILaunchIsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestArchiveLaunchUsesPlatformUserDirectories(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "modmux-desktop-linux-amd64", "modmux-desktop")
+	if err := os.MkdirAll(filepath.Dir(exe), 0755); err != nil {
+		t.Fatal(err)
+	}
+	sample := []byte("version: 1\n")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(exe), Sample), sample, 0644); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(dir, "home")
+	env := func(vars map[string]string) func(string) string {
+		return func(k string) string { return vars[k] }
+	}
+	for _, tc := range []struct {
+		name, goos  string
+		vars        map[string]string
+		config, log string
+	}{
+		{"linux defaults", "linux", nil,
+			filepath.Join(home, ".config", "modmux", "config.yaml"),
+			filepath.Join(home, ".local", "state", "modmux", "desktop.log")},
+		{"linux XDG", "linux", map[string]string{"XDG_CONFIG_HOME": filepath.Join(dir, "xdg-config"), "XDG_STATE_HOME": filepath.Join(dir, "xdg-state")},
+			filepath.Join(dir, "xdg-config", "modmux", "config.yaml"),
+			filepath.Join(dir, "xdg-state", "modmux", "desktop.log")},
+		{"linux ignores relative XDG", "linux", map[string]string{"XDG_CONFIG_HOME": "relative"},
+			filepath.Join(home, ".config", "modmux", "config.yaml"),
+			filepath.Join(home, ".local", "state", "modmux", "desktop.log")},
+		{"windows AppData", "windows", map[string]string{"APPDATA": filepath.Join(dir, "Roaming"), "LOCALAPPDATA": filepath.Join(dir, "Local")},
+			filepath.Join(dir, "Roaming", "ModMux", "config.yaml"),
+			filepath.Join(dir, "Local", "ModMux", "Logs", "desktop.log")},
+		{"windows defaults", "windows", nil,
+			filepath.Join(home, "AppData", "Roaming", "ModMux", "config.yaml"),
+			filepath.Join(home, "AppData", "Local", "ModMux", "Logs", "desktop.log")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := prepare(exe, home, "", tc.goos, env(tc.vars))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Config != tc.config || p.Log != tc.log || p.WorkDir != filepath.Dir(tc.config) {
+				t.Fatalf("paths: %+v", p)
+			}
+			if b, err := os.ReadFile(p.Config); err != nil || string(b) != string(sample) {
+				t.Fatalf("bad seed: %q %v", b, err)
+			}
+			if _, err := os.Stat(filepath.Dir(p.Log)); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	if _, err := prepare(exe, "", "", "linux", env(nil)); err == nil {
+		t.Fatal("a missing home directory needs an XDG override")
+	}
+	if p, err := prepare(exe, "", "", "windows", env(map[string]string{"APPDATA": filepath.Join(dir, "R"), "LOCALAPPDATA": filepath.Join(dir, "L")})); err != nil || p.Config == "" {
+		t.Fatalf("AppData needs no home directory: %+v %v", p, err)
+	}
+}
+
+func TestExecutableWithoutSampleIsACommandLineLaunch(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "modmux-desktop")
+	// A directory of that name is not a shipped sample.
+	if err := os.Mkdir(filepath.Join(dir, Sample), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, goos := range []string{"linux", "windows", "darwin"} {
+		p, err := prepare(exe, dir, "", goos, os.Getenv)
+		if err != nil || p != (Paths{}) {
+			t.Fatalf("%s: %+v %v", goos, p, err)
+		}
+	}
+}
