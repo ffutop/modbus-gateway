@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Gateway assembly moved from `main.go` to `internal/app`, so the CLI and the desktop app start the same runtime. Startup behavior is unchanged.
-- Console, Electron stopped page and native desktop app now share one set of design tokens generated from `design/tokens.json` (see `design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast; the rest of the look is unchanged.
+- Console and native desktop app now share one set of design tokens generated from `design/tokens.json` (see `design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast; the rest of the look is unchanged.
 
 ## [0.5.0] - 2026-09-19
 

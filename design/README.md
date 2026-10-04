@@ -1,11 +1,10 @@
 # ModMux 设计规范
 
-ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营销页面。本规范约束三处界面，让它们看起来是同一个产品：
+ModMux 是给现场工程师长时间盯着看的工业通信工具，不是营销页面。本规范约束两处界面，让它们看起来是同一个产品：
 
 | 界面 | 位置 | 令牌文件（生成，勿手改） |
 |---|---|---|
 | 浏览器控制台 | `web/` | `web/tokens.css` |
-| Electron 桌面版停机页 | `desktop/stopped.*` | `desktop/tokens.css` |
 | Gio 原生桌面版 | `desktop-native/internal/ui` | `desktop-native/internal/ui/tokens_gen.go` |
 
 **唯一来源是 `design/tokens.json`。** 修改有两种方式，结果相同，最后都要提交 `tokens.json` 和生成的文件：
@@ -125,7 +124,7 @@ CSS 中不要再写裸像素字号。裸像素字号不随 `--k` 缩放，紧凑
 以下检查都在根模块中，CI 的 `go test ./...` 会运行：
 
 - `TestGeneratedUpToDate`：生成文件与 `tokens.json` 不一致时失败。
-- `TestNoRawColors`：`web/app.{css,js}`、`index.html`、`desktop/stopped.*` 和 `desktop-native/internal/ui` 中出现裸色值（`#rrggbb`、`rgba(`、`rgb(0x…)`）时失败。
+- `TestNoRawColors`：`web/app.{css,js}`、`index.html` 和 `desktop-native/internal/ui` 中出现裸色值（`#rrggbb`、`rgba(`、`rgb(0x…)`）时失败。
 - `TestContrastRules`：对比度规则未达标时失败。
 - `TestFileRoundTrip`：`tokens.json` 不是固定格式时失败（运行 `go generate ./design` 即可修正）。
 - `tokens.json` 本身会校验：命名必须是 kebab-case、不允许未知字段、色板条目必须被引用。

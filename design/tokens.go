@@ -3,8 +3,8 @@
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
 // Package design renders the design tokens in tokens.json into the files each
-// UI consumes: CSS custom properties for the web console and the Electron
-// stopped page, and Go declarations for the Gio desktop app.
+// UI consumes: CSS custom properties for the web console and Go declarations
+// for the Gio desktop app.
 package design
 
 //go:generate go run ./cmd/gentokens
@@ -174,7 +174,6 @@ func (t *Tokens) hex(ref string) string {
 // Output paths, relative to the repository root.
 const (
 	WebCSS        = "web/tokens.css"
-	DesktopCSS    = "desktop/tokens.css"
 	DesktopNative = "desktop-native/internal/ui/tokens_gen.go"
 )
 
@@ -184,7 +183,6 @@ func (t *Tokens) Render() map[string][]byte {
 	css := t.css()
 	return map[string][]byte{
 		WebCSS:        css,
-		DesktopCSS:    css,
 		DesktopNative: t.gio(),
 	}
 }

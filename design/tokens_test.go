@@ -58,7 +58,6 @@ var (
 func TestNoRawColors(t *testing.T) {
 	files := []string{
 		"web/app.css", "web/app.js", "web/index.html",
-		"desktop/stopped.css", "desktop/stopped.html", "desktop/stopped.js",
 	}
 	native, _ := filepath.Glob(root("desktop-native/internal/ui/*.go"))
 	for _, f := range native {

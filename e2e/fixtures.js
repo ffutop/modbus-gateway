@@ -1,4 +1,4 @@
-// Starts the real gateway binary the way the desktop shell does
+// Starts the real gateway binary in sidecar mode
 // (-ui-listen 127.0.0.1:0, ui_ready line on stdout, stdin EOF to stop) with
 // a fresh config file per test.
 const base = require('@playwright/test');

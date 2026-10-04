@@ -3,9 +3,6 @@
 'use strict';
 
 const $ = (s) => document.querySelector(s);
-// desktop is the API the Electron shell exposes (desktop/preload.js); null
-// in a browser, where desktop-only controls are not shown.
-const desktop = window.modmuxDesktop ?? null;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const state = {
@@ -17,8 +14,7 @@ const state = {
   problems: [], // from POST /api/v1/config/validate for the current edits
   validating: false,
   stale: false, // the file changed on disk since it was loaded (409)
-  dockTab: 'log', // 'log' | 'problems' | 'output' (desktop only)
-  output: [], // desktop only: the gateway process's recent output lines
+  dockTab: 'log', // 'log' | 'problems'
   log: [], // request events from /api/v1/events, newest first
   metrics: new Map(), // series key ("gw" or "gw/ds") -> latest Counts
   rates: new Map(), // series key -> req/s between the last two polls
@@ -518,7 +514,7 @@ function renderDock() {
   const n = state.problems.length;
   const tab = (id, label) => `<button role="tab" aria-selected="${state.dockTab === id}" data-dock="${id}">${label}</button>`;
   $('#dock').innerHTML = `<div class="dock-tabs" role="tablist">
-      ${tab('log', '请求日志')}${tab('problems', `问题${n ? ` <span class="badge err">${n}</span>` : ''}`)}${desktop ? tab('output', '网关输出') : ''}
+      ${tab('log', '请求日志')}${tab('problems', `问题${n ? ` <span class="badge err">${n}</span>` : ''}`)}
       <span class="sp"></span><span class="faint">${state.dockTab === 'log' ? (key ? `筛选：${esc(key)}` : state.sel?.kind === 'sim' && state.logScope === 'selected' ? `关联模拟从站：${esc(cfg().simulations[state.sel.sim].name)}` : '全部网关') : ''}</span>
     </div><div class="fill" id="dock-body"></div>`;
   for (const t of document.querySelectorAll('[data-dock]')) {
@@ -537,40 +533,24 @@ function renderDockBody() {
     $('#log-scope').onchange = (e) => { state.logScope = e.target.value; renderDock(); };
     for (const [id,key] of [['slave-filter','slaveFilter'],['fc-filter','fcFilter']]) $('#'+id).oninput = (e) => { state[key] = e.target.value; renderLog(); };
     renderLog();
-  } else if (state.dockTab === 'problems') {
+  } else {
     body.innerHTML = state.problems.length
       ? `<table class="t" aria-label="问题"><tbody>${state.problems.map((p,i) => `<tr data-problem="${i}" tabindex="0"><td class="err-txt" style="width:24px">✕</td><td>${esc(p.path.join(' → '))}：${esc(p.message)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="muted pad">没有发现问题</div>';
     body.classList.add('scroll');
     for (const row of body.querySelectorAll('[data-problem]')) { row.onclick = () => locateProblem(state.problems[Number(row.dataset.problem)]); row.onkeydown = (e) => { if (e.key === 'Enter') row.click(); }; }
-  } else {
-    renderOutput();
   }
-}
-
-let outputFrame = 0;
-function scheduleOutput() {
-  if (!outputFrame) outputFrame = requestAnimationFrame(() => { outputFrame = 0; renderOutput(); });
-}
-
-// renderOutput shows the newest gateway output lines that fit.
-function renderOutput() {
-  const body = $('#dock-body');
-  if (!body || state.dockTab !== 'output') return;
-  const lines = state.output;
-  body.classList.add('scroll');
-  body.innerHTML = `<div class="output mono" role="log" aria-label="网关输出">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>`;
 }
 
 function renderToolbar() {
   const n = state.edits.size;
-  const reason = state.transitioning ? '正在重启网关…' : state.config.schema_version !== 1 ? '旧版配置仅支持查看，需手动迁移至 version: 1' : state.saving ? '正在保存…' : state.validating ? '正在校验…' : state.stale ? '文件已被外部修改' : state.validationFailed ? '校验失败，请重试' : state.problems.length ? `存在 ${state.problems.length} 个问题` : !n ? '没有未保存修改' : '';
+  const reason = state.config.schema_version !== 1 ? '旧版配置仅支持查看，需手动迁移至 version: 1' : state.saving ? '正在保存…' : state.validating ? '正在校验…' : state.stale ? '文件已被外部修改' : state.validationFailed ? '校验失败，请重试' : state.problems.length ? `存在 ${state.problems.length} 个问题` : !n ? '没有未保存修改' : '';
   const canSave = n > 0 && !reason;
   const file = state.status?.config_path?.split(/[\\/]/).pop() || '配置文件';
   $('#toolbar').innerHTML = `<span class="file" title="${esc(state.status?.config_path)}">${esc(file)}${n ? ' •' : ''}</span>
     <button class="btn ${canSave ? 'pri' : ''}" id="save" title="${esc(reason)}" ${canSave ? '' : 'disabled'}>保存 <span class="kbd">${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S</span></button>
     ${n ? '<button class="btn" id="changes">查看修改</button><button class="btn" id="discard">放弃修改</button>' : ''}
-    ${desktop ? `<button class="btn" id="restart" ${state.transitioning ? 'disabled' : ''}>重启网关</button>` : !state.config.running_matches ? '<button class="btn" id="apply-help">如何生效</button>' : ''}
+    ${!state.config.running_matches ? '<button class="btn" id="apply-help">如何生效</button>' : ''}
     <span class="sp"></span>
     ${state.stale ? '<span class="stale" role="alert">配置文件已在别处被修改，当前修改无法保存。<button class="btn" id="copy-edits">复制修改</button><button class="btn" id="reload">重新加载</button></span>' : ''}
     ${n ? `<span class="badge warn">${n} 处未保存修改 · 保存后需重启生效</span>` : state.config.running_matches ? '<span class="badge">配置与运行中一致</span>' : '<span class="badge warn">已保存，重启网关后生效 · 运行中仍使用旧配置</span>'}
@@ -579,14 +559,12 @@ function renderToolbar() {
     ${state.notice ? `<span class="notice" role="alert">${esc(state.notice)}</span>` : ''}`;
   $('#save').onclick = save;
   if ($('#retry-validation')) $('#retry-validation').onclick = () => { state.validating = true; state.validationFailed = false; renderToolbar(); validate(); };
-  if ($('#restart')) $('#restart').onclick = () => desktop.restartGateway();
   if ($('#reload')) $('#reload').onclick = reload;
   if ($('#changes')) $('#changes').onclick = () => showText('未保存修改', editsText());
   if ($('#copy-edits')) $('#copy-edits').onclick = () => copyText(editsText());
   if ($('#discard')) $('#discard').onclick = async () => { if (await ask('放弃修改', '将丢弃所有未保存修改。', ['放弃修改','取消']) === '放弃修改') { dropEdits(); render(); } };
   if ($('#apply-help')) $('#apply-help').onclick = () => showText('使配置生效', '文件已保存，运行中仍使用旧配置。请通过实际部署方式重启服务：systemd、Docker 或启动网关的终端。连接恢复后将自动核对配置状态。');
-  for (const input of document.querySelectorAll('[data-path]')) input.disabled = state.saving || state.transitioning;
-  desktop?.setDirty(n > 0, n ? {config:state.config,edits:[...state.edits.values()]} : null);
+  for (const input of document.querySelectorAll('[data-path]')) input.disabled = state.saving;
 }
 
 function dropEdits() {
@@ -630,15 +608,6 @@ async function save() {
   finally { state.saving = false; render(); }
 }
 
-async function guardLeave() {
-  if (state.saving) return false;
-  if (!state.edits.size) return true;
-  const choice = await ask('存在未保存修改', '继续操作前，请保存或明确放弃修改。', ['保存并继续','放弃修改','取消']);
-  if (choice === '保存并继续') return save();
-  if (choice === '放弃修改') { dropEdits(); render(); return true; }
-  return false;
-}
-
 // setEdit records (or, when the value is back to the saved one, drops) an
 // edit, then revalidates the whole draft shortly after typing stops.
 let validateTimer;
@@ -674,7 +643,7 @@ function setOnline(online) {
   $('#status').innerHTML = online
     ? '<span><span class="dot"></span> 管理连接正常（不代表 Modbus 监听健康）</span><span class="sp"></span>'
     : '<span role="alert"><span class="dot warn"></span> 管理连接已断开，正在重试… · 数据已过期</span><span class="sp"></span>';
-  $('#status').innerHTML += `<span>${state.lastUpdate ? '最后更新 ' + state.lastUpdate.toLocaleTimeString() : '等待数据'}</span>${state.eventsOnline === false ? '<span>请求日志连接已断开，正在重试</span>' : ''}${desktop ? '<span>关闭应用会停止转发</span>' : ''}`;
+  $('#status').innerHTML += `<span>${state.lastUpdate ? '最后更新 ' + state.lastUpdate.toLocaleTimeString() : '等待数据'}</span>${state.eventsOnline === false ? '<span>请求日志连接已断开，正在重试</span>' : ''}`;
   if (!online) renderInspector();
 }
 
@@ -684,7 +653,7 @@ function render() {
   renderEditor();
   renderInspector();
   renderDock();
-  for (const input of document.querySelectorAll('[data-path]')) input.disabled = state.saving || state.transitioning;
+  for (const input of document.querySelectorAll('[data-path]')) input.disabled = state.saving;
 }
 
 function select(sel) {
@@ -708,28 +677,10 @@ async function start() {
       if (!$('#save')?.disabled) save();
     }
   });
-  if (desktop) {
-    const recovered = await desktop.getDraft();
-    if (recovered?.edits?.length) {
-      if (recovered.config.revision !== state.config.revision) { state.config = recovered.config; state.stale = true; }
-      state.edits = new Map(recovered.edits.map(edit => [pathKey(edit.path),edit])); changed(); state.notice = '已恢复网关停止前的未保存草稿';
-    }
-  }
   ensureSelection();
   render();
-  if (state.edits.size && !state.stale) validate();
   subscribeEvents();
-  addEventListener('beforeunload', (e) => { if (state.edits.size && !desktop) { e.preventDefault(); e.returnValue = ''; } });
-  if (desktop) {
-    desktop.onGuard(async (id) => desktop.guardResult(id, await guardLeave()));
-    desktop.onPhase((phase) => { state.transitioning = true; state.notice = phase; renderToolbar(); $('#restart').disabled = true; for (const input of document.querySelectorAll('[data-path]')) input.disabled = true; });
-    desktop.onView((view) => { state.view = view; renderEditor(); });
-    state.output = await desktop.getOutput();
-    desktop.onOutput((lines) => {
-      state.output = state.output.concat(lines).slice(-500);
-      scheduleOutput();
-    });
-  }
+  addEventListener('beforeunload', (e) => { if (state.edits.size) { e.preventDefault(); e.returnValue = ''; } });
   pollMetrics();
   setInterval(pollMetrics, 1000);
   let wide = isWide();

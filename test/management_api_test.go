@@ -119,7 +119,8 @@ ui:
 	})
 }
 
-// sidecar is the gateway binary started the way the desktop shell starts it.
+// sidecar is the gateway binary started in sidecar mode, the way a parent
+// process (such as the native desktop app) runs it.
 type sidecar struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
@@ -240,7 +241,7 @@ func TestSidecar_ExitsGracefullyWhenStdinCloses(t *testing.T) {
 	}
 	handler.Close()
 
-	sc.stdin.Close() // what the desktop shell does on quit, or what the OS does if it crashes
+	sc.stdin.Close() // what the parent does on quit, or what the OS does if it crashes
 	exited := make(chan error, 1)
 	go func() { exited <- sc.cmd.Wait() }()
 	select {

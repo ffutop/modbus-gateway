@@ -122,8 +122,6 @@ tr.bad{background:var(--err-tint)}
 .recent .e{color:var(--err);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dock-tabs [role=tab]{padding:0}
 .pad{padding:12px}
-.output{padding:4px 12px;line-height:calc(18px * var(--k));color:var(--muted);white-space:nowrap;overflow:hidden}
-.output div{overflow:hidden;text-overflow:ellipsis}
 #dock-body{display:flex;flex-direction:column}
 /* Keep the workspace stable while making all long content reachable. */
 .side{
@@ -195,14 +193,6 @@ tr.bad{background:var(--err-tint)}
 }
 .status{
   overflow:hidden
-}
-.output{
-  overflow:auto;
-  user-select:text
-}
-.output div{
-  white-space:pre-wrap;
-  overflow-wrap:anywhere
 }
 .topology-note{
   position:absolute;

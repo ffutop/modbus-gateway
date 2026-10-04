@@ -32,7 +32,7 @@ var version = "dev"
 func main() {
 	configFile := flag.String("config", "", "Path to config file")
 	uiListen := flag.String("ui-listen", "", "Enable the management API on this address, overriding the config's ui section (port 0 = any free port)")
-	exitOnStdinEOF := flag.Bool("exit-on-stdin-eof", false, "Shut down gracefully when stdin is closed (used by the desktop shell)")
+	exitOnStdinEOF := flag.Bool("exit-on-stdin-eof", false, "Shut down gracefully when stdin is closed (sidecar mode: the parent process owns the lifetime)")
 	flag.Parse()
 
 	// Load Configuration
@@ -44,8 +44,9 @@ func main() {
 
 	setupLogger(cfg.Log)
 
-	// The desktop shell starts the gateway with -ui-listen and reads the
-	// actual address back from the ui_ready line on stdout.
+	// A parent process running the gateway as a sidecar starts it with
+	// -ui-listen and reads the actual address back from the ui_ready line on
+	// stdout.
 	announceUI := *uiListen != ""
 	if announceUI {
 		cfg.UI = config.UIConfig{Enabled: true, Listen: *uiListen}
@@ -93,10 +94,10 @@ func main() {
 		Static:          web.Assets,
 	})
 
-	// Wait for a signal, or (desktop shell) for stdin to close. Closing stdin
-	// is how the shell stops us on every OS: on Windows killing a child is a
-	// hard kill that would skip flushing persistence, and if the shell crashes
-	// the OS closes the pipe for it.
+	// Wait for a signal, or (sidecar mode) for stdin to close. Closing stdin
+	// is how the parent stops us on every OS: on Windows killing a child is a
+	// hard kill that would skip flushing persistence, and if the parent
+	// crashes the OS closes the pipe for it.
 	stdinClosed := make(chan struct{})
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -156,7 +157,8 @@ func setupLogger(cfg config.LogConfig) {
 // startUI serves the management API when enabled; it returns nil otherwise,
 // so a config without `ui` opens no extra port. A non-empty token makes every
 // request authenticate; announce prints {"event":"ui_ready","addr":...} on
-// stdout once listening, for the desktop shell.
+// stdout once listening, for a parent process running the gateway as a
+// sidecar.
 func startUI(cfg config.UIConfig, token string, announce bool, deps api.Deps) *http.Server {
 	if !cfg.Enabled {
 		return nil

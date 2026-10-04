@@ -130,10 +130,11 @@ func secureHeaders(h http.Handler) http.Handler {
 
 // Guard wraps the API with the checks its listener needs.
 //
-// With a token (the desktop shell's child-process mode), every request must
-// carry "Authorization: Bearer <token>". On a loopback listener, the Host
-// header must name a loopback host: otherwise a web page the user opens could
-// rebind its own domain to 127.0.0.1 and drive the API (DNS rebinding).
+// With a token (sidecar mode, where a parent process owns the gateway), every
+// request must carry "Authorization: Bearer <token>". On a loopback listener,
+// the Host header must name a loopback host: otherwise a web page the user
+// opens could rebind its own domain to 127.0.0.1 and drive the API (DNS
+// rebinding).
 func Guard(h http.Handler, token string, loopbackOnly bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if loopbackOnly && !isLoopbackHost(r.Host) {
