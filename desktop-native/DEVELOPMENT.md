@@ -2,6 +2,8 @@
 
 正式运行入口为 `go run . -config ../config.yaml`。界面基线来自 2026-10-04 的九轮原型评审；原型代码（`prototype-ui/`，模拟流量）已在落地后删除，可从 git 历史查看，结论汇总如下。
 
+2026-10-05 的配置页 A 原型也已落地到 `internal/workspace`。浏览器原型 `prototype-config/` 及 `.scratch/desktop-native-configuration/` 中的临时需求、实施记录和验证产物已清理，历史版本可从 Git 查看。当前界面以原生实现、`design/tokens.json` 和回归测试为准。需要重新生成截图时，在本目录运行 `WORKSPACE_SNAPSHOT_DIR=/tmp/modmux-workspace go test ./internal/workspace -run TestWorkspaceSnapshots -count=1`；验证产物放在仓库外。
+
 ## 界面选型记录
 
 1. **主线**：比较报文优先（三栏抓包）、设备工作台（对象树 + 寄存器网格）与双联视图后，选双联视图：报文与寄存器联动；先选链路再看请求；一次请求的上游（主站 ↔ 网关）与下游（网关 ↔ 设备）两段都要可见；模拟模型下游是进程内调用、没有线路帧，需专属表达。
