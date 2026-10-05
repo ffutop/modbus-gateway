@@ -41,7 +41,7 @@ func TestWorkspaceSnapshots(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				r.Record(telemetry.Event{Time: base.Add(time.Duration(i-20) * time.Millisecond), Gateway: "demo", Downstream: "device", Source: "127.0.0.1:53124", SlaveID: 9, FunctionCode: 3, Address: 0, Quantity: 2, Request: []byte{3, 0, 0, 0, 2}, Response: []byte{3, 4, 0, 25, 0, 77}, Duration: 2 * time.Millisecond})
 			}
-			for _, state := range []string{"live", "menu", "config", "yaml", "startup-failed", "restart-confirm", "config-gateway", "config-model", "config-delete-model", "config-empty", "config-overview", "config-search", "config-picker", "config-bulk", "config-advanced", "config-recovery", "config-wizard", "config-batch-delete", "config-create-gateway", "config-create-model", "config-create-reference", "config-conflict", "config-three-versions", "config-long-values"} {
+			for _, state := range []string{"live", "menu", "config", "yaml", "startup-failed", "restart-confirm", "config-gateway", "config-model", "config-delete-model", "config-empty", "config-overview", "config-search", "config-picker", "config-bulk", "config-advanced", "config-recovery", "config-wizard", "config-batch-delete", "config-create-gateway", "config-create-model", "config-create-reference", "config-conflict", "config-three-versions", "config-long-values", "config-reference", "config-filter", "config-choice"} {
 				info := Info{Config: parsed(t, text), Content: text, Running: true, Source: live.Local{Recorder: r}, Save: func(string) error { return nil }, Rebase: func(string) error { return nil }}
 				if state == "startup-failed" {
 					info.Running = false
@@ -61,9 +61,32 @@ func TestWorkspaceSnapshots(t *testing.T) {
 					info.Content = strings.Replace(info.Content, "127.0.0.1:15021", "[2001:db8:1234:5678:90ab:cdef:1234:5678]:15021", 1)
 					info.Config = parsed(t, info.Content)
 				}
+				if state == "config-reference" {
+					c := parsed(t, text)
+					c.Gateways[0].Name = "产线采集"
+					c.Simulations[0].Name = "产线共享模型"
+					c.Gateways[0].Downstreams[0].Name = "模拟从站"
+					c.Gateways[0].Downstreams[0].SimulationRef = "产线共享模型"
+					c.Gateways[0].Downstreams[1].Name = "数据注入"
+					c.Gateways[0].Downstreams[1].SimulationRef = "产线共享模型"
+					c.Gateways[0].Downstreams[2].Name = "温控器"
+					g := c.Gateways[0]
+					g.Name = "包装线转发"
+					g.Upstreams = append(g.Upstreams[:0:0], g.Upstreams...)
+					g.Upstreams[0].Tcp.Address = "127.0.0.1:15022"
+					g.Downstreams = append(g.Downstreams[:0:0], g.Downstreams[2])
+					g.Downstreams[0].Name = "包装 PLC"
+					c.Gateways = append(c.Gateways, g)
+					c.Gateways[0].Downstreams = append(c.Gateways[0].Downstreams[:0:0], c.Gateways[0].Downstreams[2], c.Gateways[0].Downstreams[0], c.Gateways[0].Downstreams[1])
+					info.Content = toYAML(c)
+					info.Config = parsed(t, info.Content)
+				}
 				info.Config.Path = "/workspace/modmux/site-production.yaml"
 				if state == "config-long-values" {
 					info.Config.Path = "/workspace/生产环境/" + strings.Repeat("现场配置文件", 10) + ".yaml"
+				}
+				if state == "config-reference" {
+					info.Config.Path = "/Users/engineer/Projects/factory/factory-floor.yaml"
 				}
 				u := New(info)
 				u.world.Poll(base)
@@ -86,6 +109,14 @@ func TestWorkspaceSnapshots(t *testing.T) {
 					u.view.shell.cfg.sel = "gateways.0.downstreams.1"
 				}
 				switch state {
+				case "config-reference":
+					u.view.shell.cfg.sel = "group:网关"
+				case "config-filter":
+					u.view.shell.cfg.sel = "group:网关"
+					u.view.shell.cfg.wb.filterOpen = true
+				case "config-choice":
+					u.view.shell.cfg.wb.optionPath = "gateways.0.downstreams.1.type"
+
 				case "config-create-gateway":
 					u.view.shell.cfg.openCreation("add-gateway", "")
 				case "config-create-model":

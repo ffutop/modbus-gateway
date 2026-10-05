@@ -6,6 +6,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/configfile"
@@ -29,6 +30,8 @@ type workbenchState struct {
 	clicks               clicks[string]
 	query, pickerQuery   widget.Editor
 	filter               string
+	filterOpen           bool
+	optionPath           string
 	collapsed, advanced  map[string]bool
 	selected             map[string]*widget.Bool
 	back                 []navigationPoint
@@ -52,7 +55,7 @@ func (e *configEditor) initWorkbench(info Info) {
 	e.saveDraft, e.clearDraft, e.recoveryError = info.SaveDraft, info.ClearDraft, info.DraftError
 }
 func (e *configEditor) wbButton(gtx C, action, label string, kind btnKind) D {
-	draw := func(gtx C) D { return e.th.button(gtx, e.wb.clicks.get(action), label, kind) }
+	draw := func(gtx C) D { return e.configButton(gtx, e.wb.clicks.get(action), label, kind) }
 	if (action == "undo" && e.editBase == nil && len(e.history) == 0) || (action == "redo" && (e.editBase != nil || len(e.future) == 0)) || (action == "back" && len(e.wb.back) == 0) {
 		return disabled(gtx, draw)
 	}
@@ -89,6 +92,8 @@ func (e *configEditor) navigate(path string) {
 		e.wb.filter = "全部"
 	}
 	e.sel = path
+	e.wb.optionPath = ""
+	e.wb.filterOpen = false
 	e.form.Position.First = 0
 	e.form.Position.Offset = 0
 	e.wb.picker = ""
@@ -226,47 +231,55 @@ func (e *configEditor) workbenchBar(gtx C) D {
 	if e.raw {
 		return D{}
 	}
-	return layout.Inset{Left: 16, Right: 14, Bottom: 6}.Layout(gtx, func(gtx C) D {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	return layout.Inset{Left: 20, Right: 20, Top: 10, Bottom: 10}.Layout(gtx, func(gtx C) D {
+		return row(gtx, 36,
 			layout.Rigid(func(gtx C) D {
-				return row(gtx, 36, layout.Flexed(1, func(gtx C) D {
-					return e.searchField(gtx, &e.wb.query, "搜索名称、协议、地址、串口、Slave ID 或模型")
-				}), gap(8), layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "back", "返回", btnDefault) }), gap(6), layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "undo", "撤销", btnDefault) }), gap(6), layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "redo", "重做", btnDefault) }))
+				width := unit.Dp(320)
+				if gtx.Constraints.Max.X < gtx.Dp(750) {
+					width = 220
+				}
+				return fixed(gtx, width, func(gtx C) D {
+					return e.searchField(gtx, &e.wb.query, "搜索对象、地址或字段，如 波特率")
+				})
+			}), gap(8),
+			layout.Rigid(func(gtx C) D {
+				label := e.wb.filter
+				if label == "全部" {
+					label = "全部状态"
+				}
+				return e.wb.clicks.get("filter-menu").Layout(gtx, func(gtx C) D {
+					return outlined(gtx, colControl, colCanvas, radiusSm, func(gtx C) D {
+						return layout.Inset{Left: 11, Right: 8, Top: 7, Bottom: 7}.Layout(gtx, func(gtx C) D {
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Rigid(e.th.label(label, textSize, colBody).Layout), gap(8), layout.Rigid(configChevron))
+						})
+					})
+				})
 			}),
-			layout.Rigid(func(gtx C) D {
-				children := []layout.FlexChild{}
-				for _, f := range []string{"全部", "有问题", "未保存", "待生效", "无引用"} {
-					if f == "无引用" && e.sel != "group:模拟模型" && !strings.HasPrefix(e.sel, "simulations.") {
-						continue
-					}
-					children = append(children, layout.Rigid(func(gtx C) D { return e.th.tab(gtx, e.wb.clicks.get("filter|"+f), f, e.wb.filter == f) }), gap(4))
-				}
-				children = append(children, layout.Flexed(1, layout.Spacer{}.Layout))
-				for _, kind := range []string{"上游", "下游"} {
-					children = append(children, layout.Rigid(func(gtx C) D {
-						return e.th.tab(gtx, e.wb.clicks.get("group|"+kind), kind+"总览", e.sel == "group:"+kind)
-					}), gap(4))
-				}
-				return row(gtx, 30, children...)
-			}))
+			layout.Flexed(1, layout.Spacer{}.Layout),
+			layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "back", "返回", btnDefault) }), gap(8),
+			layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "undo", "撤销", btnDefault) }), gap(8),
+			layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "redo", "重做", btnDefault) }))
 	})
 }
 func (e *configEditor) workbenchTree(gtx C) D {
 	pending := e.pendingIDs()
-	items := []layout.Widget{}
+	items := []layout.Widget{func(gtx C) D { return e.configNav(gtx, "网关", "网关总览", false) }}
 	for _, kind := range []string{"网关", "模拟模型"} {
 		items = append(items, func(gtx C) D {
-			return layout.Inset{Left: 14, Right: 6, Top: 6}.Layout(gtx, func(gtx C) D {
-				return row(gtx, 32,
-					layout.Rigid(func(gtx C) D { return e.treeDisclosure(gtx, "collapse|"+kind, !e.wb.collapsed[kind]) }), gap(6),
-					layout.Rigid(func(gtx C) D { return configRoleIcon(gtx, kind, colMuted) }), gap(6),
-					layout.Flexed(1, func(gtx C) D { return e.wbButton(gtx, "group|"+kind, kind+"总览", btnLink) }),
-					layout.Rigid(func(gtx C) D {
-						action := map[string]string{"网关": "add-gateway", "模拟模型": "add-simulation"}[kind]
-						return e.th.button(gtx, e.structure.get(action), "+", btnLink)
-					}))
+			label := "网关与链路"
+			action := "add-gateway"
+			if kind == "模拟模型" {
+				label = "模拟模型"
+				action = "add-simulation"
+			}
+			return layout.Inset{Left: 18, Right: 20, Top: 12, Bottom: 4}.Layout(gtx, func(gtx C) D {
+				return row(gtx, 22, layout.Flexed(1, e.th.label(label, smallSize, colMuted).Layout), layout.Rigid(func(gtx C) D { return e.configPlus(gtx, e.structure.get(action)) }))
 			})
 		})
+		if kind == "模拟模型" {
+			items = append(items, func(gtx C) D { return e.configNav(gtx, kind, kind+"总览", true) })
+		}
+
 		if e.wb.collapsed[kind] && e.wb.query.Text() == "" {
 			continue
 		}
@@ -296,9 +309,16 @@ func (e *configEditor) workbenchTree(gtx C) D {
 		}
 	}
 	if n := e.node("global"); n != nil && e.matches(n, pending) {
+		items = append(items, func(gtx C) D {
+			return layout.Inset{Left: 18, Top: 16, Bottom: 6}.Layout(gtx, e.th.label("运行设置", smallSize, colMuted).Layout)
+		})
 		items = append(items, func(gtx C) D { return e.treeItem(gtx, n) })
 	}
-	return material.List(e.th.Theme, &e.tree).Layout(gtx, len(items), func(gtx C, i int) D { return items[i](gtx) })
+	return background(gtx, colSoft, func(gtx C) D {
+		return layout.Inset{Top: 16, Bottom: 16}.Layout(gtx, func(gtx C) D {
+			return e.configList(gtx, &e.tree, len(items), func(gtx C, i int) D { return items[i](gtx) })
+		})
+	})
 }
 func (e *configEditor) workbenchPane(gtx C) D {
 	if e.wb.picker != "" {
@@ -322,78 +342,48 @@ func (e *configEditor) overviewPane(gtx C) D {
 		}
 	}
 	widgets := []layout.Widget{func(gtx C) D {
-		return e.th.bold(fmt.Sprintf("%s · %d 个对象", kind, len(nodes)), titleSize, colInk).Layout(gtx)
-	}}
-	selectedCount, hiddenCount := 0, 0
-	visible := map[string]bool{}
-	for _, n := range nodes {
-		visible[n.id] = true
-	}
-	onlyDownstream := true
-	for id, v := range e.wb.selected {
-		if v.Value {
-			selectedCount++
-			if !visible[id] {
-				hiddenCount++
-			}
-			if n := e.nodeByID(id); n == nil || n.kind != "下游" {
-				onlyDownstream = false
-			}
-		}
-	}
-	if selectedCount > 0 {
-		widgets = append(widgets, func(gtx C) D {
-			children := []layout.FlexChild{layout.Rigid(e.th.label(fmt.Sprintf("已选 %d（隐藏 %d）", selectedCount, hiddenCount), smallSize, colMuted).Layout), gap(8)}
-			for _, a := range []struct{ key, label string }{{"select-visible", "选择当前结果"}, {"clear-selection", "清除选择"}, {"copy", "复制"}, {"edit", "批量修改"}, {"move", "移动下游"}, {"delete", "删除"}} {
-				if a.key == "move" && !onlyDownstream {
-					continue
+		return layout.Flex{Alignment: layout.Start}.Layout(gtx,
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(e.th.bold(kind+"总览", titleSize, colInk).Layout), vgap(4), layout.Rigid(e.th.label("查看配置关系，选择对象后执行批量操作", smallSize, colMuted).Layout))
+			}),
+			layout.Rigid(func(gtx C) D {
+				if len(nodes) == 0 && e.wb.query.Text() == "" && e.wb.filter == "全部" {
+					return D{}
 				}
-				children = append(children, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "batch|"+a.key, a.label, btnDefault) }), gap(5))
-			}
-			return e.wrapControls(gtx, children)
-		})
-	}
+				action, label := "add-gateway", "新建网关"
+				if kind == "模拟模型" {
+					action, label = "add-simulation", "新建模拟模型"
+				}
+				if kind != "网关" && kind != "模拟模型" {
+					return D{}
+				}
+				return e.configButton(gtx, e.structure.get(action), label, btnDefault)
+			}))
+	}}
 
-	if kind == "网关" {
-		widgets = append(widgets, func(gtx C) D { return e.th.button(gtx, e.structure.get("add-gateway"), "新建网关", btnPrimary) })
-	}
-	if kind == "模拟模型" {
-		widgets = append(widgets, func(gtx C) D {
-			return e.th.button(gtx, e.structure.get("add-simulation"), "新建模拟模型", btnPrimary)
-		})
-	}
+	widgets = append(widgets, func(gtx C) D { return e.configSelectionBar(gtx, nodes) })
 
 	if kind == "下游" {
 		widgets = append(widgets, func(gtx C) D { return e.wbButton(gtx, "batch|add", "批量新增下游", btnDefault) })
 	}
+	if len(nodes) > 0 {
+		widgets = append(widgets, func(gtx C) D { return e.configTableHeader(gtx) })
+	}
 	for _, n := range nodes {
-		widgets = append(widgets, func(gtx C) D {
-			selected := e.wb.selected[n.id]
-			if selected == nil {
-				selected = &widget.Bool{}
-				e.wb.selected[n.id] = selected
-			}
-			return outlined(gtx, colHair, colCanvas, radiusSm, func(gtx C) D {
-				return layout.UniformInset(8).Layout(gtx, func(gtx C) D {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Rigid(func(gtx C) D { return material.CheckBox(e.th.Theme, selected, "").Layout(gtx) }), layout.Flexed(1, func(gtx C) D {
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "open|"+n.path, n.title(), btnLink) }), layout.Rigid(e.th.label(e.describe(n), smallSize, colBody).Layout))
-					}), layout.Rigid(e.th.label(e.status(n), smallSize, colMuted).Layout))
-				})
-			})
-		})
+		widgets = append(widgets, func(gtx C) D { return e.configTableRow(gtx, n) })
 	}
+
 	if len(nodes) == 0 {
-		message := "没有匹配对象，请调整搜索或筛选。"
-		if e.wb.query.Text() == "" && e.wb.filter == "全部" {
-			message = map[string]string{"网关": "尚无网关。点击“新建网关”开始配置。", "模拟模型": "尚无模拟模型。可独立新建，也可从 local / injector 下游新建并引用。"}[kind]
-			if message == "" {
-				message = "尚无此类配置对象。"
-			}
-		}
-		widgets = append(widgets, e.th.label(message, textSize, colMuted).Layout)
+		widgets = append(widgets, func(gtx C) D { return e.configEmptyState(gtx, kind) })
 	}
-	return layout.Inset{Left: 20, Right: 20, Top: 16, Bottom: 12}.Layout(gtx, func(gtx C) D {
-		return material.List(e.th.Theme, &e.wb.overview).Layout(gtx, len(widgets), func(gtx C, i int) D { return layout.Inset{Bottom: 8}.Layout(gtx, widgets[i]) })
+
+	return layout.Inset{Left: 24, Right: 24, Top: 20, Bottom: 12}.Layout(gtx, func(gtx C) D {
+		return e.configList(gtx, &e.wb.overview, len(widgets), func(gtx C, i int) D {
+			if i == 0 {
+				return layout.Inset{Bottom: 18}.Layout(gtx, widgets[i])
+			}
+			return widgets[i](gtx)
+		})
 	})
 }
 func (e *configEditor) wrapControls(gtx C, children []layout.FlexChild) D {
@@ -403,32 +393,14 @@ func (e *configEditor) wrapControls(gtx C, children []layout.FlexChild) D {
 	}
 	return row(gtx, 34, children...)
 }
-func (e *configEditor) editActions(gtx C, n *cfgNode) D {
-	children := []layout.FlexChild{}
-	if e.editBase != nil {
-		children = append(children, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "finish", "完成编辑", btnPrimary) }), gap(6), layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "cancel-edit", "放弃本次编辑", btnDefault) }), gap(6))
-	}
-	for _, s := range n.specs {
-		if s.advanced {
-			children = append(children, layout.Rigid(func(gtx C) D {
-				return e.wbButton(gtx, "advanced|"+n.id, map[bool]string{true: "收起高级参数", false: "高级参数"}[e.wb.advanced[n.id]], btnDefault)
-			}), gap(6))
-			break
-		}
-	}
-	if e.wb.bulkPaused {
-		children = append(children, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "resume-bulk", "返回批量操作", btnDefault) }), gap(6))
-	}
-	if n.kind != "常规" {
-		children = append(children, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "copy-one|"+n.id, "复制", btnDefault) }))
-	}
-	if len(children) == 0 {
-		return D{}
-	}
-	return layout.Inset{Left: 24, Right: 24, Top: 8, Bottom: 8}.Layout(gtx, func(gtx C) D { return e.wrapControls(gtx, children) })
-}
 func (e *configEditor) modelSelector(gtx C, s *spec) D {
-	return e.wbButton(gtx, "picker|"+s.path, orDash(s.get())+" ...", btnDefault)
+	return e.wb.clicks.get("picker|"+s.path).Layout(gtx, func(gtx C) D {
+		return outlined(gtx, colControl, colCanvas, radiusSm, func(gtx C) D {
+			return layout.Inset{Left: 9, Right: 9, Top: 7, Bottom: 7}.Layout(gtx, func(gtx C) D {
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, e.th.label(orDash(s.get()), textSize, colBody).Layout), layout.Rigid(configChevron))
+			})
+		})
+	})
 }
 func (e *configEditor) pickerPane(gtx C) D {
 	items := []layout.Widget{e.th.bold("选择模拟模型", titleSize, colInk).Layout, func(gtx C) D { return e.searchField(gtx, &e.wb.pickerQuery, "搜索模型名称或存储位置") }, func(gtx C) D { return e.wbButton(gtx, "close-picker", "返回原操作", btnDefault) }}
@@ -567,8 +539,23 @@ func (e *configEditor) updateWorkbench(gtx C) {
 				break
 			}
 
+		case "clear-filter":
+			e.wb.query.SetText("")
+			e.wb.filter = "全部"
+		case "popup-dismiss":
+			e.wb.filterOpen = false
+			e.wb.optionPath = ""
+		case "choice":
+			if e.wb.optionPath == value {
+				e.wb.optionPath = ""
+			} else {
+				e.wb.optionPath = value
+			}
+		case "filter-menu":
+			e.wb.filterOpen = !e.wb.filterOpen
 		case "filter":
 			e.wb.filter = value
+			e.wb.filterOpen = false
 		case "collapse-id":
 			e.wb.collapsed[value] = !e.wb.collapsed[value]
 		case "collapse":

@@ -21,6 +21,12 @@ func configRoleIcon(gtx C, role string, ink color.NRGBA) D {
 		}
 	}
 	switch role {
+	case "总览":
+		for _, x := range []float32{2, 10} {
+			for _, y := range []float32{2, 10} {
+				line(f32.Pt(x, y), f32.Pt(x+4, y), f32.Pt(x+4, y+4), f32.Pt(x, y+4), f32.Pt(x, y))
+			}
+		}
 	case "上游", "下游":
 		line(f32.Pt(6, 4), f32.Pt(10, 4), f32.Pt(10, 12), f32.Pt(6, 12), f32.Pt(6, 4))
 		line(f32.Pt(0, 8), f32.Pt(6, 8))

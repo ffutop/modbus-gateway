@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/configfile"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
+	"image"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -719,12 +720,7 @@ func (e *configEditor) Layout(gtx C) D {
 					})
 				}),
 				layout.Rigid(func(gtx C) D { return e.toolbar(gtx, changes, errs, canSave) }),
-				layout.Rigid(func(gtx C) D {
-					if !e.showPath {
-						return D{}
-					}
-					return layout.Inset{Left: 16, Right: 16, Bottom: 6}.Layout(gtx, th.label(e.configPath, smallSize, colMuted).Layout)
-				}),
+
 				layout.Rigid(e.workbenchBar),
 				layout.Rigid(e.recoveryBanner),
 				layout.Rigid(func(gtx C) D { return hline(gtx, colHair) }),
@@ -777,6 +773,8 @@ func (e *configEditor) Layout(gtx C) D {
 				}),
 			)
 		}),
+		layout.Stacked(e.configPopupDismiss),
+		layout.Stacked(e.configFilterPopup),
 	)
 }
 
@@ -897,7 +895,11 @@ func (e *configEditor) update(gtx C) {
 		for _, s := range n.specs {
 			if s.options != nil {
 				for opt, b := range e.opts[s.path] {
-					if b.Clicked(gtx) && s.get() != opt {
+					if b.Clicked(gtx) {
+						e.wb.optionPath = ""
+						if s.get() == opt {
+							continue
+						}
 						if strings.HasSuffix(s.path, ".type") {
 							path := s.path
 							// Flush the active protocol's editors before hiding them. The next
@@ -982,100 +984,61 @@ func (e *configEditor) reparse() {
 
 func (e *configEditor) toolbar(gtx C, changes []change, errs int, canSave bool) D {
 	th := e.th
-	return layout.Inset{Left: 16, Right: 14}.Layout(gtx, func(gtx C) D {
-		children := []layout.FlexChild{
-			layout.Rigid(func(gtx C) D {
-				name := filepath.Base(e.configPath)
-				if name == "." {
-					name = "配置文件"
-				}
-				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(280))
-				return e.wb.clicks.get("file-path").Layout(gtx, func(gtx C) D {
-					return layout.Inset{Left: 12, Top: 7, Bottom: 7, Right: 12}.Layout(gtx, func(gtx C) D { l := th.label(name, textSize, colAccent); l.MaxLines = 1; return l.Layout(gtx) })
-				})
-			}), gap(12),
-			layout.Rigid(func(gtx C) D {
-				labels := [2]string{"可视化", "YAML"}
-				return layout.Flex{}.Layout(gtx, th.segmented(2, func(i int) (*widget.Clickable, string, bool) { return &e.modes[i], labels[i], e.raw == (i == 1) })...)
-			}), gap(12),
-			layout.Rigid(func(gtx C) D {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			return layout.Inset{Left: 20, Right: 20, Top: 10, Bottom: 10}.Layout(gtx, func(gtx C) D {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Flexed(1, func(gtx C) D {
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx C) D {
+								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx C) D {
+										gtx.Constraints.Max.X = max(gtx.Dp(80), gtx.Constraints.Max.X-gtx.Dp(210))
+										label := th.bold(filepath.Base(e.configPath), textSize, colInk)
+										label.MaxLines = 1
+										return label.Layout(gtx)
+									}), gap(8),
+									layout.Rigid(func(gtx C) D { return e.configBadge(gtx, fmt.Sprintf("v%d", e.draft.Version), colBody, colCard) }), gap(8),
+									layout.Rigid(func(gtx C) D { return e.configToolbarState(gtx, changes, errs) }))
+							}), vgap(4), layout.Rigid(func(gtx C) D { l := th.label(e.configPath, smallSize, colMuted); l.MaxLines = 1; return l.Layout(gtx) }))
+					}), gap(16),
 					layout.Rigid(func(gtx C) D {
-						if e.saveFailed {
-							return th.badge(gtx, "保存失败", colErr, colErrBg)
-						}
-						if errs > 0 {
-							return th.badge(gtx, fmt.Sprintf("%d 处问题", errs), colErr, colErrBg)
-						}
-						if len(changes) > 0 || e.unsaved() {
-							return th.badge(gtx, "未保存", colWarn, colWarnBg)
-						}
-						return th.badge(gtx, "已保存", colMuted, colSoft)
-					}), gap(6),
+						labels := [2]string{"可视化", "YAML"}
+						return layout.Flex{}.Layout(gtx, layout.Rigid(func(gtx C) D { return e.configSegment(gtx, &e.modes[0], labels[0], !e.raw, true, false) }), layout.Rigid(func(gtx C) D { return e.configSegment(gtx, &e.modes[1], labels[1], e.raw, false, true) }))
+					}), gap(8),
+					layout.Rigid(func(gtx C) D { return e.configButton(gtx, &e.diff, "变更", btnDefault) }), gap(8),
 					layout.Rigid(func(gtx C) D {
-						if e.isStarting() {
-							return th.badge(gtx, "正在启动", colWarn, colWarnBg)
+						if !canSave {
+							return D{}
+						}
+						return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D { return e.configButton(gtx, &e.save, "仅保存", btnDefault) })
+					}),
+					layout.Rigid(func(gtx C) D {
+						label := "保存并应用"
+						if !e.unsaved() {
+							label = "应用配置"
 						}
 						if !e.isRunning() {
-							return th.badge(gtx, "已停止", colMuted, colSoft)
+							label = "启动网关"
 						}
-						if rt, ok := e.runtime.(interface{ ConnectionError() error }); ok && rt.ConnectionError() != nil {
-							return th.badge(gtx, "管理连接中断", colErr, colErrBg)
+						if e.isStarting() {
+							label = "正在应用…"
 						}
-						if rt, ok := e.runtime.(interface{ UsingRecovery() bool }); ok && rt.UsingRecovery() {
-							return th.badge(gtx, "恢复配置运行中", colWarn, colWarnBg)
+						if !canSave && !e.needsApply() && e.isRunning() {
+							label = "配置已同步"
 						}
-						if e.needsApply() {
-							return th.badge(gtx, "待应用", colWarn, colWarnBg)
+						kind := btnDefault
+						if canSave || e.needsApply() || !e.isRunning() {
+							kind = btnPrimary
 						}
-						return th.badge(gtx, "运行一致", colOk, colOkBg)
+						draw := func(gtx C) D { return e.configButton(gtx, &e.saveApply, label, kind) }
+						if e.isStarting() || errs > 0 || (!canSave && !e.needsApply() && e.isRunning()) {
+							return disabled(gtx, draw)
+						}
+						return draw(gtx)
 					}))
-			}),
-			layout.Flexed(1, layout.Spacer{}.Layout),
-			layout.Rigid(func(gtx C) D {
-				if len(changes) == 0 && !e.pendingRename() {
-					return D{}
-				}
-				return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D { return th.button(gtx, &e.revert, "撤销全部", btnDefault) })
-			}),
-			layout.Rigid(func(gtx C) D {
-				txt := "查看变更"
-				if e.showDiff {
-					txt = "隐藏变更"
-				}
-				return th.button(gtx, &e.diff, txt, btnDefault)
-			}),
-			gap(8),
-			layout.Rigid(func(gtx C) D {
-				if !canSave {
-					return disabled(gtx, func(gtx C) D { return th.button(gtx, &e.save, "仅保存", btnDefault) })
-				}
-				return th.button(gtx, &e.save, "仅保存", btnDefault)
-			}),
-			gap(8),
-			layout.Rigid(func(gtx C) D {
-				label := "保存并应用"
-				if !e.unsaved() {
-					label = "应用已保存配置"
-				}
-				if !e.isRunning() && !e.unsaved() {
-					label = "启动网关"
-				}
-				if e.isStarting() {
-					label = "正在应用…"
-				}
-				draw := func(gtx C) D { return th.button(gtx, &e.saveApply, label, btnPrimary) }
-				if e.isStarting() || errs > 0 || (!canSave && !e.needsApply() && e.isRunning()) {
-					return disabled(gtx, draw)
-				}
-				return draw(gtx)
-			}),
-		}
-		if gtx.Constraints.Max.X < gtx.Dp(1200) {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx C) D { return row(gtx, 40, children[:5]...) }), layout.Rigid(func(gtx C) D { return row(gtx, 40, children[5:]...) }))
-		}
-		return row(gtx, 46, children...)
-	})
+			})
+		}), layout.Rigid(func(gtx C) D { return hline(gtx, colHair) }))
 }
 
 // disabled draws w faded and ignoring input.
@@ -1091,7 +1054,7 @@ func disabled(gtx C, w layout.Widget) D {
 
 func (e *configEditor) visualPane(gtx C) D {
 	return layout.Flex{}.Layout(gtx,
-		layout.Rigid(func(gtx C) D { return fixed(gtx, 260, e.workbenchTree) }),
+		layout.Rigid(func(gtx C) D { return fixed(gtx, 231, e.workbenchTree) }),
 		layout.Rigid(func(gtx C) D { return vline(gtx, colHair) }),
 		layout.Flexed(1, e.workbenchPane),
 	)
@@ -1099,7 +1062,7 @@ func (e *configEditor) visualPane(gtx C) D {
 
 func (e *configEditor) treeItem(gtx C, n *cfgNode) D {
 	btn := e.treeBtn.get(n.path)
-	bg, fg := colCanvas, colBody
+	bg, fg := colSoft, colBody
 	if n.path == e.sel {
 		bg, fg = colSelected, colOnSelected
 	} else if btn.Hovered() {
@@ -1110,15 +1073,19 @@ func (e *configEditor) treeItem(gtx C, n *cfgNode) D {
 		depth = 1
 	}
 	if n.kind == "上游" || n.kind == "下游" {
-		depth = 2
-	}
-	if n.kind == "网关" {
 		depth = 1
 	}
+	if n.kind == "网关" {
+		depth = 0
+	}
 	return layout.Inset{Left: 6, Right: 6}.Layout(gtx, func(gtx C) D {
-		return rounded(gtx, bg, 0, func(gtx C) D {
+
+		return rounded(gtx, bg, radiusSm, func(gtx C) D {
+			if depth > 0 {
+				paint.FillShape(gtx.Ops, colHair, clip.Rect{Min: image.Pt(gtx.Dp(16), 0), Max: image.Pt(gtx.Dp(16)+1, gtx.Dp(34))}.Op())
+			}
 			return layout.Inset{Left: unit.Dp(8 + depth*20), Right: 8}.Layout(gtx, func(gtx C) D {
-				return row(gtx, 32,
+				return row(gtx, 34,
 					layout.Rigid(func(gtx C) D {
 						if n.kind == "网关" {
 							return e.treeDisclosure(gtx, "collapse-id|"+n.id, !e.wb.collapsed[n.id])
@@ -1127,9 +1094,9 @@ func (e *configEditor) treeItem(gtx C, n *cfgNode) D {
 					}), gap(6),
 					layout.Flexed(1, func(gtx C) D {
 						return btn.Layout(gtx, func(gtx C) D {
-							return row(gtx, 32, layout.Rigid(func(gtx C) D { return configRoleIcon(gtx, n.kind, fg) }), gap(6),
+							return row(gtx, 34, layout.Rigid(func(gtx C) D { return configRoleIcon(gtx, n.kind, fg) }), gap(6),
 								layout.Flexed(1, func(gtx C) D {
-									title := n.title()
+									title := configNodeTitle(n)
 									if n.kind == "常规" {
 										title = "全局运行设置"
 									}
@@ -1157,122 +1124,100 @@ func (e *configEditor) treeItem(gtx C, n *cfgNode) D {
 }
 
 func (e *configEditor) formPane(gtx C) D {
-	th := e.th
 	n := e.node(e.sel)
-	var items []layout.Widget
+	if n == nil {
+		return D{}
+	}
+	items := []layout.Widget{func(gtx C) D { return e.configDetailHeader(gtx, n) }}
 	items = append(items, func(gtx C) D {
-		return layout.Inset{Left: 24, Top: 18, Bottom: 10}.Layout(gtx, func(gtx C) D {
-			return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
-				layout.Rigid(th.label(n.kind, smallSize, colMuted).Layout), gap(8),
-				layout.Rigid(th.bold(n.title(), titleSize, colInk).Layout))
-		})
+		nodes := []*cfgNode{}
+		for _, child := range e.nodes {
+			if n.kind == "网关" && child.gw == n.gw && child.depth > 0 {
+				nodes = append(nodes, child)
+			}
+			if n.kind == "模拟模型" && child.kind == "下游" {
+				if d := e.downstream(child.path); d != nil && d.SimulationRef == n.title() {
+					nodes = append(nodes, child)
+				}
+			}
+		}
+		return layout.Inset{Left: 24, Right: 24}.Layout(gtx, func(gtx C) D { return e.configSelectionBar(gtx, nodes) })
 	})
-
+	specs := []*spec{}
 	for _, s := range n.specs {
 		if s.visible() && (!s.advanced || e.wb.advanced[n.id]) && !strings.Contains(s.path, ".simulation.mappings.") {
-			items = append(items, func(gtx C) D { return e.fieldRow(gtx, n, s) })
+			specs = append(specs, s)
 		}
 	}
+	items = append(items, func(gtx C) D { return e.configFieldGrid(gtx, n, specs) })
 	items = append(items, func(gtx C) D { return e.objectExplanation(gtx, n) })
-	items = append(items, func(gtx C) D { return e.relationsPane(gtx, n) })
-	items = append(items, func(gtx C) D { return e.mappingGrid(gtx, n) })
-	items = append(items, func(gtx C) D { return e.mappingActions(gtx, n) })
-	if e.deletePath == "" {
+	if n.kind == "网关" || n.kind == "模拟模型" {
+		items = append(items, func(gtx C) D { return e.configRelations(gtx, n) })
+	} else {
+		items = append(items, func(gtx C) D { return e.relationsPane(gtx, n) })
+	}
+	items = append(items, func(gtx C) D { return e.mappingGrid(gtx, n) }, func(gtx C) D { return D{} })
+	if e.deletePath != "" {
 		items = append(items, func(gtx C) D { return e.structureActions(gtx, n) })
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx C) D { return e.editActions(gtx, n) }),
-		layout.Flexed(1, func(gtx C) D {
-			return material.List(th.Theme, &e.form).Layout(gtx, len(items), func(gtx C, i int) D { return items[i](gtx) })
-		}))
+	return e.configList(gtx, &e.form, len(items), func(gtx C, i int) D { return items[i](gtx) })
 }
-
 func (e *configEditor) fieldRow(gtx C, n *cfgNode, s *spec) D {
-	th := e.th
-	msg := e.fieldErr(s)
-	old, had := e.baseline[e.fieldKey(n, s)]
-	dirty := !had || old != s.get()
-	return layout.Inset{Left: 24, Right: 24, Bottom: 12}.Layout(gtx, func(gtx C) D {
-		return layout.Flex{}.Layout(gtx,
+	return layout.Inset{Bottom: 14}.Layout(gtx, func(gtx C) D {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx C) D {
-				return fixed(gtx, 110, func(gtx C) D {
-					return layout.Inset{Top: 6}.Layout(gtx, func(gtx C) D {
-						return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
-							layout.Rigid(th.label(s.label, textSize, colMuted).Layout),
-							layout.Rigid(func(gtx C) D {
-								if !dirty || e.isNew(n) {
-									return D{}
-								}
-								return layout.Inset{Left: 4}.Layout(gtx, th.label("●", microSize, colWarn).Layout)
-							}))
-					})
+				label := s.label
+				if old, ok := e.baseline[e.fieldKey(n, s)]; ok && old != s.get() {
+					label += " · 已修改"
+				}
+				return e.th.label(label, smallSize, colBody).Layout(gtx)
+			}), vgap(4),
+			layout.Rigid(func(gtx C) D { return e.configFieldControl(gtx, s) }), layout.Rigid(func(gtx C) D {
+				if !strings.HasSuffix(s.path, ".simulation.ref") {
+					return D{}
+				}
+				return layout.Inset{Top: 4}.Layout(gtx, func(gtx C) D {
+					return e.configButton(gtx, e.structure.get("new-model|"+n.path), "新建并引用模型…", btnLink)
 				})
 			}),
-			layout.Flexed(1, func(gtx C) D {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(func(gtx C) D {
-						switch {
-						case strings.HasSuffix(s.path, ".simulation.ref"):
-							return e.modelSelector(gtx, s)
-						case s.readOnly:
-							return layout.Inset{Top: 6}.Layout(gtx, th.label(s.get(), textSize, colBody).Layout)
-						case s.options != nil:
-							btns := e.opts[s.path]
-							if btns == nil {
-								btns = clicks[string]{}
-								e.opts[s.path] = btns
-							}
-							return e.optionChips(gtx, s, btns)
-						}
-						ed := e.eds[s.path]
-						border := colControl
-						if msg != "" {
-							border = colErrSolid
-						} else if gtx.Focused(ed) {
-							border = colAccent
-						}
-						gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(420))
-						fieldBg := colCanvas
-						if border == colErrSolid {
-							fieldBg = colErrTint
-						}
-						return outlined(gtx, border, fieldBg, radiusSm, func(gtx C) D {
-							gtx.Constraints.Min.X = gtx.Constraints.Max.X
-							return layout.Inset{Left: 9, Right: 9, Top: 3, Bottom: 3}.Layout(gtx, func(gtx C) D {
-								st := material.Editor(th.Theme, ed, "")
-								st.TextSize = textSize
-								st.LineHeight = uiLineHeight(textSize)
-								st.LineHeightScale = 1
-								return st.Layout(gtx)
-							})
-						})
-					}),
-					layout.Rigid(func(gtx C) D {
-						if !strings.HasSuffix(s.path, ".baud_rate") {
-							return D{}
-						}
-						buttons := []layout.FlexChild{}
-						for _, value := range []string{"9600", "19200", "38400", "115200"} {
-							buttons = append(buttons, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "baud|"+s.path+"|"+value, value, btnLink) }), gap(4))
-						}
-						return row(gtx, 30, buttons...)
-					}),
-					layout.Rigid(func(gtx C) D {
-						switch {
-						case msg != "":
-							return layout.Inset{Top: 3}.Layout(gtx, th.label(msg, smallSize, colErr).Layout)
-						case dirty && had:
-							return layout.Inset{Top: 3}.Layout(gtx, th.label("原值："+orDash(old), smallSize, colWarn).Layout)
-						case s.hint != "":
-							label := th.label(s.hint, smallSize, colMuted)
-							label.MaxLines = 0
-							return layout.Inset{Top: 3}.Layout(gtx, label.Layout)
-						}
-						return D{}
-					}),
-				)
-			}),
-		)
+			layout.Rigid(func(gtx C) D {
+				msg, ink := e.fieldErr(s), colErr
+				if msg == "" {
+					msg, ink = s.hint, colMuted
+				}
+				if msg == "" {
+					return D{}
+				}
+				return layout.Inset{Top: 4}.Layout(gtx, func(gtx C) D { l := e.th.label(msg, smallSize, ink); l.MaxLines = 0; return l.Layout(gtx) })
+			}))
+	})
+}
+func (e *configEditor) configFieldControl(gtx C, s *spec) D {
+	if strings.HasSuffix(s.path, ".simulation.ref") {
+		return e.modelSelector(gtx, s)
+	}
+	if s.readOnly {
+		return e.th.label(s.get(), textSize, colBody).Layout(gtx)
+	}
+	if s.options != nil {
+		return e.configChoice(gtx, s)
+	}
+	ed := e.eds[s.path]
+	border := colControl
+	if e.fieldErr(s) != "" {
+		border = colErrSolid
+	} else if gtx.Focused(ed) {
+		border = colAccent
+	}
+	return outlined(gtx, border, colCanvas, radiusSm, func(gtx C) D {
+		gtx.Constraints.Min.X = gtx.Constraints.Max.X
+		return layout.Inset{Left: 9, Right: 9, Top: 7, Bottom: 7}.Layout(gtx, func(gtx C) D {
+			st := material.Editor(e.th.Theme, ed, "")
+			st.TextSize = textSize
+			st.LineHeight = uiLineHeight(textSize)
+			st.LineHeightScale = 1
+			return st.Layout(gtx)
+		})
 	})
 }
 
@@ -1288,7 +1233,7 @@ func orDash(s string) string {
 func (e *configEditor) rawPane(gtx C) D {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
-			return layout.Inset{Left: 16, Top: 6, Bottom: 6}.Layout(gtx, e.th.label("保存将原样写入，保留注释与格式。", smallSize, colMuted).Layout)
+			return layout.Inset{Left: 16, Top: 6, Bottom: 6}.Layout(gtx, e.th.label("YAML 配置", titleSize, colInk).Layout)
 		}),
 		layout.Flexed(1, func(gtx C) D {
 			return layout.UniformInset(16).Layout(gtx, func(gtx C) D {
@@ -1308,14 +1253,14 @@ func (e *configEditor) rawProblems(gtx C) D {
 		children = append(children,
 			layout.Rigid(func(gtx C) D {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx C) D { return th.button(gtx, e.issueBtn.get("$parse"), "定位解析错误", btnLink) }), gap(8),
+					layout.Rigid(func(gtx C) D { return e.configButton(gtx, e.issueBtn.get("$parse"), "定位解析错误", btnLink) }), gap(8),
 					layout.Flexed(1, func(gtx C) D {
 						_, description := e.parseDiagnostic()
 						l := th.label(description, smallSize, colErr)
 						l.MaxLines = 3
 						return l.Layout(gtx)
 					}),
-					layout.Rigid(func(gtx C) D { return th.button(gtx, &e.discardRaw, "放弃文本修改", btnDefault) }))
+					layout.Rigid(func(gtx C) D { return e.configButton(gtx, &e.discardRaw, "放弃文本修改", btnDefault) }))
 			}),
 			layout.Rigid(th.label("修正前不能保存，也不能切回可视化；表单保留最后一次能解析的内容。", smallSize, colMuted).Layout))
 	case e.visualLocked:

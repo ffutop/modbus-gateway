@@ -199,10 +199,10 @@ func (e *configEditor) mappingActions(gtx C, n *cfgNode) D {
 		return D{}
 	}
 	var children []layout.FlexChild
-	children = append(children, layout.Rigid(func(gtx C) D { return e.th.button(gtx, e.mapAdd.get(n.path), "+ 添加映射", btnDefault) }))
+	children = append(children, layout.Rigid(func(gtx C) D { return e.configButton(gtx, e.mapAdd.get(n.path), "+ 添加映射", btnDefault) }))
 	for i := range d.Mappings {
 		children = append(children, gap(6), layout.Rigid(func(gtx C) D {
-			return e.th.button(gtx, e.mapRemove.get(fmt.Sprintf("%s.%d", n.path, i)), fmt.Sprintf("删除映射 %d", i+1), btnDanger)
+			return e.configButton(gtx, e.mapRemove.get(fmt.Sprintf("%s.%d", n.path, i)), fmt.Sprintf("删除映射 %d", i+1), btnDanger)
 		}))
 	}
 	return layout.Inset{Left: 24, Bottom: 12}.Layout(gtx, func(gtx C) D { return layout.Flex{}.Layout(gtx, children...) })
@@ -320,81 +320,52 @@ func (e *configEditor) updateIssues(gtx C) {
 }
 
 func (e *configEditor) mappingGrid(gtx C, n *cfgNode) D {
-	if gtx.Constraints.Max.X < gtx.Dp(600) {
-		var rows []layout.FlexChild
-		for _, s := range n.specs {
-			if strings.Contains(s.path, ".simulation.mappings.") {
-				s := s
-				rows = append(rows, layout.Rigid(func(gtx C) D { return e.fieldRow(gtx, n, s) }))
-			}
-		}
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
-	}
 	d := e.downstream(n.path)
 	if d == nil || d.Type != "injector" {
 		return D{}
 	}
-	titles := []string{"源表", "源地址", "数量", "目标表", "目标地址"}
-	var rows []layout.FlexChild
-	rows = append(rows, layout.Rigid(e.th.label("零基地址 0–65535；设备手册中的 4xxxx 编号需要按其约定换算。", smallSize, colMuted).Layout), vgap(8))
-	rows = append(rows, layout.Rigid(func(gtx C) D {
-		var cols []layout.FlexChild
-		for _, t := range titles {
-			cols = append(cols, layout.Flexed(1, e.th.label(t, smallSize, colMuted).Layout))
-		}
-		return layout.Flex{}.Layout(gtx, cols...)
-	}), vgap(6))
-	labels := map[string]string{"coils": "线圈", "holding_registers": "保持", "discrete_inputs": "离散", "input_registers": "输入"}
-	for mi := range d.Mappings {
-		base := fmt.Sprintf("%s.simulation.mappings.%d.", n.path, mi)
-		var specs []*spec
-		for _, s := range n.specs {
-			if strings.HasPrefix(s.path, base) {
-				specs = append(specs, s)
+	return layout.Inset{Left: 24, Right: 24, Bottom: 16}.Layout(gtx, func(gtx C) D {
+		children := []layout.FlexChild{layout.Rigid(func(gtx C) D { return hline(gtx, colHair) }), vgap(16), layout.Rigid(func(gtx C) D {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, e.th.bold("写入映射 · 零基地址", textSize, colInk).Layout), layout.Rigid(func(gtx C) D { return e.configButton(gtx, e.mapAdd.get(n.path), "+ 映射", btnDefault) }))
+		}), vgap(8), layout.Rigid(e.th.label("地址 0 不等同于设备手册的 40001；结束地址由起点和数量推导。", smallSize, colMuted).Layout), vgap(12)}
+		for mi, m := range d.Mappings {
+			rangeTitle := fmt.Sprintf("映射 %d", mi+1)
+			if m.Source.Count > 0 {
+				rangeTitle += fmt.Sprintf(" · %d–%d → %d–%d", m.Source.StartAddress, uint32(m.Source.StartAddress)+uint32(m.Source.Count)-1, m.Target.StartAddress, uint32(m.Target.StartAddress)+uint32(m.Source.Count)-1)
 			}
-		}
-		rows = append(rows, layout.Rigid(func(gtx C) D {
-			var cols []layout.FlexChild
-			for _, s := range specs {
-				cols = append(cols, layout.Flexed(1, func(gtx C) D {
-					return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D {
-						if s.options != nil {
-							btns := e.opts[s.path]
-							if btns == nil {
-								btns = clicks[string]{}
-								e.opts[s.path] = btns
+			base := fmt.Sprintf("%s.simulation.mappings.%d.", n.path, mi)
+			specs := []*spec{}
+			for _, field := range n.specs {
+				if strings.HasPrefix(field.path, base) {
+					specs = append(specs, field)
+				}
+			}
+			children = append(children, layout.Rigid(func(gtx C) D {
+				return outlined(gtx, colHair, colSoft, radiusSm, func(gtx C) D {
+					return layout.UniformInset(12).Layout(gtx, func(gtx C) D {
+						rows := []layout.FlexChild{layout.Rigid(func(gtx C) D {
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, e.th.bold(rangeTitle, textSize, colBody).Layout), layout.Rigid(func(gtx C) D {
+								return e.configButton(gtx, e.mapRemove.get(fmt.Sprintf("%s.%d", n.path, mi)), "移除", btnDefault)
+							}))
+						}), vgap(12)}
+						for i := 0; i < len(specs); i += 2 {
+							left := specs[i]
+							if i+1 == len(specs) {
+								rows = append(rows, layout.Rigid(func(gtx C) D { return e.fieldRow(gtx, n, left) }))
+								continue
 							}
-							return layout.Flex{}.Layout(gtx, e.th.segmented(len(s.options), func(i int) (*widget.Clickable, string, bool) {
-								opt := s.options[i]
-								return btns.get(opt), labels[opt], s.get() == opt
-							})...)
+							right := specs[i+1]
+							rows = append(rows, layout.Rigid(func(gtx C) D {
+								return layout.Flex{Alignment: layout.Start}.Layout(gtx, layout.Flexed(1, func(gtx C) D { return e.fieldRow(gtx, n, left) }), gap(24), layout.Flexed(1, func(gtx C) D { return e.fieldRow(gtx, n, right) }))
+							}))
 						}
-						border := colControl
-						if e.fieldErr(s) != "" {
-							border = colErrSolid
-						}
-						fieldBg := colCanvas
-						if border == colErrSolid {
-							fieldBg = colErrTint
-						}
-						return outlined(gtx, border, fieldBg, radiusSm, func(gtx C) D {
-							st := material.Editor(e.th.Theme, e.eds[s.path], "")
-							st.TextSize = textSize
-							st.LineHeight = uiLineHeight(textSize)
-							st.LineHeightScale = 1
-							return layout.Inset{Left: 9, Right: 9, Top: 3, Bottom: 3}.Layout(gtx, st.Layout)
-						})
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 					})
-				}))
-			}
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx, cols...)
-		}), vgap(4))
-		m := d.Mappings[mi]
-		if m.Source.Count > 0 {
-			rows = append(rows, layout.Rigid(e.th.label(fmt.Sprintf("源 %d–%d → 目标 %d–%d", m.Source.StartAddress, uint32(m.Source.StartAddress)+uint32(m.Source.Count)-1, m.Target.StartAddress, uint32(m.Target.StartAddress)+uint32(m.Source.Count)-1), smallSize, colMuted).Layout), vgap(8))
+				})
+			}), vgap(12))
 		}
-	}
-	return layout.Inset{Left: 24, Right: 24, Bottom: 12}.Layout(gtx, func(gtx C) D { return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...) })
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	})
 }
 
 func (e *configEditor) alignMapping(path, value string) {
@@ -460,49 +431,6 @@ func (e *configEditor) parseDiagnostic() (int, string) {
 
 // optionChips lays out choices as a segmented control, wrapping onto further
 // rows in narrow forms rather than hiding the last option.
-func (e *configEditor) optionChips(gtx C, s *spec, btns clicks[string]) D {
-	labels := map[string]string{"holding_registers": "保持寄存器", "coils": "线圈", "input_registers": "输入寄存器", "discrete_inputs": "离散输入"}
-	label := func(opt string) string {
-		if text, ok := labels[opt]; ok {
-			return text
-		}
-		return opt
-	}
-	available := float32(gtx.Constraints.Max.X) / gtx.Metric.PxPerDp
-	var rows []layout.FlexChild
-	var line []string
-	used := float32(0)
-	flush := func() {
-		if len(line) > 0 {
-			opts := line
-			rows = append(rows, layout.Rigid(func(gtx C) D {
-				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, e.th.segmented(len(opts), func(i int) (*widget.Clickable, string, bool) {
-					return btns.get(opts[i]), label(opts[i]), s.get() == opts[i]
-				})...)
-			}), vgap(4))
-			line = nil
-			used = 0
-		}
-	}
-	for _, opt := range s.options {
-		width := float32(22)
-		for _, r := range label(opt) {
-			if r > 127 {
-				width += 13
-			} else {
-				width += 7
-			}
-		}
-		if used+width > available {
-			flush()
-		}
-		line = append(line, opt)
-		used += width
-	}
-	flush()
-	return layout.Inset{Top: 3}.Layout(gtx, func(gtx C) D { return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...) })
-}
-
 func (e *configEditor) mappingConflict(p config.Problem, target bool) string {
 	path := problemPath(p)
 	node := e.deepest(path)

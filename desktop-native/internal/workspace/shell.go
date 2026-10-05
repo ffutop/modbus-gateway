@@ -223,12 +223,12 @@ func (s *shell) menuBar(gtx C) D {
 	})
 }
 func (s *shell) toolbar(gtx C) D {
-	return background(gtx, colSoft, func(gtx C) D {
+	return background(gtx, colCanvas, func(gtx C) D {
 		return layout.Inset{Left: 12, Right: 12}.Layout(gtx, func(gtx C) D {
-			return fixedH(gtx, 40, func(gtx C) D {
+			return fixedH(gtx, 38, func(gtx C) D {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx C) D { return s.th.tab(gtx, &s.modules[0], "联动监视", s.module == 0) }), gap(4),
-					layout.Rigid(func(gtx C) D { return s.th.tab(gtx, &s.modules[1], "配置编辑", s.module == 1) }),
+					layout.Rigid(func(gtx C) D { return s.cfg.configModuleTab(gtx, &s.modules[0], "联动监视", s.module == 0) }), gap(4),
+					layout.Rigid(func(gtx C) D { return s.cfg.configModuleTab(gtx, &s.modules[1], "配置编辑", s.module == 1) }),
 					layout.Flexed(1, layout.Spacer{}.Layout),
 					layout.Rigid(func(gtx C) D {
 						if s.module == 1 {
@@ -242,18 +242,27 @@ func (s *shell) toolbar(gtx C) D {
 	})
 }
 func (s *shell) statusBar(gtx C) D {
-	return background(gtx, colCard, func(gtx C) D {
+	return background(gtx, colSoft, func(gtx C) D {
 		return layout.Inset{Left: 12, Right: 12}.Layout(gtx, func(gtx C) D {
-			return fixedH(gtx, 24, func(gtx C) D {
+			return fixedH(gtx, 28, func(gtx C) D {
 				state, fg := s.runtimeText()
 				if s.world.missed > 0 {
 					state += fmt.Sprintf(" · %d 条未采集", s.world.missed)
 				}
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(.6, func(gtx C) D { l := s.th.label(state, smallSize, fg); l.MaxLines = 1; return l.Layout(gtx) }), gap(16),
-					layout.Rigid(s.th.label(fmt.Sprintf("网关数：%d", len(s.world.Gateways)), smallSize, colMuted).Layout),
+					layout.Rigid(func(gtx C) D {
+						if s.module == 1 {
+							return D{}
+						}
+						return s.th.label(fmt.Sprintf("网关数：%d", len(s.world.Gateways)), smallSize, colMuted).Layout(gtx)
+					}),
 					gap(16), layout.Flexed(.4, func(gtx C) D {
-						l := s.th.label(s.cfg.configPath, smallSize, colMuted)
+						label := s.cfg.configPath
+						if s.module == 1 {
+							label = fmt.Sprintf("草稿 %d 处变更 · 待应用 %d 处 · 网关 %d", len(s.cfg.draftChanges()), len(s.cfg.pendingChanges()), len(s.cfg.draft.Gateways))
+						}
+						l := s.th.label(label, smallSize, colBody)
 						l.MaxLines = 1
 						l.Alignment = text.End
 						gtx.Constraints.Min.X = gtx.Constraints.Max.X
@@ -454,7 +463,10 @@ func (s *shell) shortcuts(gtx C) {
 			continue
 		}
 		if k.Name == key.NameEscape {
-			if s.cfg.creation != nil {
+			if s.cfg.wb.filterOpen || s.cfg.wb.optionPath != "" {
+				s.cfg.wb.filterOpen = false
+				s.cfg.wb.optionPath = ""
+			} else if s.cfg.creation != nil {
 				s.cfg.creation.clicks.get("cancel").Click()
 			} else if s.cfg.conflict != nil {
 				s.cfg.conflict = nil

@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rebuild the native configuration presentation around the frozen A prototype, with grouped navigation, aligned overview tables, two-column forms and native dropdown controls.
+
 - Apply the approved native configuration inspector: vector role icons and aligned trees, full-height YAML, explicit atomic creation, independent draft/saved/running diffs, custom serial baud rates, in-app conflict rebasing, keyboard navigation, and cached large-project queries. Commit the running baseline only after all listeners succeed; report management connection loss and preserve the last healthy configuration on failed application.
 
 - Gateway assembly moved from `main.go` to `internal/app`, and the command itself to `internal/cli`, so the desktop app runs exactly the CLI as its child process. Flags and startup behavior are unchanged.
