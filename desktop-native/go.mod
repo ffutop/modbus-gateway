@@ -1,6 +1,6 @@
 module github.com/ffutop/modbus-gateway/desktop-native
 
-go 1.24.0
+go 1.24.3
 
 replace github.com/ffutop/modbus-gateway => ../
 

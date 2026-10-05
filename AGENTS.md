@@ -10,7 +10,7 @@ Modbus 协议转换与路由网关（Go）。一个进程内运行多个 gateway
 - `internal/simulation`（含 `model` 与 `persistence`：memory / file / mmap / sql）：共享模拟模型、持久化与写入审计；`local`、`injector` 下游在 `internal/transport/local`、`internal/transport/injector` 中把 Modbus 请求翻译为对模型的读写。
 - `internal/api`、`internal/telemetry`：管理 HTTP API（status、events、registers，供桌面版子进程模式读取）与运行指标。没有浏览器控制台。
 - `internal/transport/*`：`transport.Upstream` / `transport.Downstream` 的各协议实现；`internal/modbus/*`：PDU、RTU 帧与 CRC。网关不作为库对外提供，代码都在 `internal/` 下。
-- `desktop-native/`：唯一的桌面实现（Gio，独立 Go 模块，需 Go 1.24+，经 `replace` 引用根模块）。Electron 外壳已移除。网关以子进程运行：同一可执行文件带 `--sidecar` 启动自身，经根模块的 sidecar 协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）和管理 API 通信（`internal/sidecar`）；改动该协议或 `/api/v1/events`、`/api/v1/status` 时同步原生版客户端。
+- `desktop-native/`：唯一的桌面实现（Gio，独立 Go 模块，需 Go 1.24.3+，经 `replace` 引用根模块）。Electron 外壳已移除。网关以子进程运行：同一可执行文件带 `--sidecar` 启动自身，经根模块的 sidecar 协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）和管理 API 通信（`internal/sidecar`）；改动该协议或 `/api/v1/events`、`/api/v1/status` 时同步原生版客户端。
 - `desktop-native/design/`：设计令牌唯一来源 `tokens.json`、规范 `README.md` 与生成器；在 `desktop-native` 中运行 `go generate ./design` 生成 `internal/workspace/tokens_gen.go`。
 - `test/`：独立 Go 模块的端到端测试；`docs/`：GitHub Pages 站点、原型与 `docs/superpowers/specs/` 下的设计/PRD。
 
@@ -32,7 +32,7 @@ go build -o modbus-gateway . && (cd test && go test -v ./...)
 
 ## 硬约束
 
-- **根模块兼容 Go 1.21。** `go.mod`、发布流水线和 Dockerfile 都固定 1.21，本机工具链可能更新，编译通过不代表兼容。不要使用 1.22+ 的语言特性或标准库 API（如 `for i := range n`、`net/http` 路由模式），不要提升 `go` 指令；确需升级时单独改动并同步 `.github/workflows/` 与根目录 `Dockerfile`。
+- **Go 版本统一为 1.24.3。** 根模块、`desktop-native/` 与 `test/` 的 `go.mod` 使用相同的 `go` 指令；CI 通过根目录 `go.mod` 选择工具链，Dockerfile 使用对应版本。本机工具链可能更新，编译通过不代表兼容。不要使用 Go 1.25+ 的语言特性或标准库 API；确需升级时单独改动并同步所有模块、`.github/workflows/`、根目录 `Dockerfile` 与双语文档。
 - **配置向后兼容。** v0 配置必须继续可用；v1 拒绝未知字段，新增字段需同时补校验（`internal/config/validate.go`）与测试。改变配置语义或默认值属于破坏性变更。
 - **双语文档同步。** 修改 `README.md` 时同步 `README_CN.md`；`CHANGELOG.md` 与 `CHANGELOG_CN.md` 同步维护，遵循 Keep a Changelog。发布流水线按 `## [x.y.z]` 标题从两份 CHANGELOG 提取 release notes，不要改动该标题格式。
 - **格式化只针对改动文件。** 仓库内部分既有文件未经 `gofmt`；只对自己修改的文件运行 `gofmt -w`，不要顺带重排无关文件。

@@ -754,7 +754,7 @@ graph LR
 
 ### 源码构建（可选）
 
-仅需运行时优先使用 Releases。修改代码或使用尚未发布功能时再构建；根模块要求 Go 1.21+，首次构建需获取模块依赖：
+仅需运行时优先使用 Releases。修改代码或使用尚未发布功能时再构建；三个 Go 模块（根模块、`desktop-native/` 和 `test/`）统一要求 Go 1.24.3+，首次构建需获取模块依赖：
 
 ```bash
 git clone https://github.com/ffutop/modbus-gateway.git
