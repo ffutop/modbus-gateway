@@ -27,7 +27,8 @@ var ContrastRules = []ContrastRule{
 	{"warn", "warn-bg", 4.5}, {"warn", "canvas", 4.5},
 	{"err", "err-bg", 4.5}, {"err", "canvas", 4.5}, {"err", "err-tint", 4.5},
 	{"on-dark", "ink", 4.5}, {"on-dark-body", "dark", 4.5}, {"on-dark-muted", "dark", 4.5},
-	{"ok-solid", "canvas", 3}, {"err-solid", "canvas", 3}, {"accent", "canvas", 3},
+	{"on-primary", "primary", 4.5}, {"on-selected", "selected", 4.5},
+	{"ok-solid", "canvas", 3}, {"err-solid", "canvas", 3}, {"accent", "canvas", 3}, {"primary", "canvas", 3},
 }
 
 // Contrast is the WCAG 2 contrast ratio between two #rrggbb colors.

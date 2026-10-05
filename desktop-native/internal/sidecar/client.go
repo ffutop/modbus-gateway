@@ -41,6 +41,7 @@ type Client struct {
 	cancel      context.CancelFunc
 	notify      func() // new requests or listener states arrived
 
+	statusErr error
 	mu        sync.Mutex
 	events    []telemetry.Event // ascending Seq
 	last      uint64
@@ -103,7 +104,7 @@ func (c *Client) Registers(sim string, t live.Table, start, count uint16) ([]uin
 func (c *Client) Upstreams() []gateway.UpstreamStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.upstreams == nil {
+	if c.upstreams == nil || c.statusErr != nil {
 		return nil
 	}
 	return append([]gateway.UpstreamStatus{}, c.upstreams...)
@@ -232,18 +233,22 @@ func (c *Client) poll(ctx context.Context) {
 			var status struct {
 				Upstreams []gateway.UpstreamStatus `json:"upstreams"`
 			}
-			if c.getJSON(ctx, "/api/v1/status", &status) == nil {
+			err := c.getJSON(ctx, "/api/v1/status", &status)
+			c.mu.Lock()
+			changed := fmt.Sprint(c.statusErr) != fmt.Sprint(err)
+			c.statusErr = err
+			if err == nil {
 				if status.Upstreams == nil {
 					status.Upstreams = []gateway.UpstreamStatus{}
 				}
-				c.mu.Lock()
-				changed := c.upstreams == nil || !slices.Equal(c.upstreams, status.Upstreams)
+				changed = changed || c.upstreams == nil || !slices.Equal(c.upstreams, status.Upstreams)
 				c.upstreams = status.Upstreams
-				c.mu.Unlock()
-				if changed {
-					c.notify()
-				}
 			}
+			c.mu.Unlock()
+			if changed {
+				c.notify()
+			}
+
 		}
 		c.refreshWindows(ctx)
 		select {
@@ -279,3 +284,5 @@ func (c *Client) refreshWindows(ctx context.Context) {
 		c.mu.Unlock()
 	}
 }
+
+func (c *Client) ConnectionError() error { c.mu.Lock(); defer c.mu.Unlock(); return c.statusErr }

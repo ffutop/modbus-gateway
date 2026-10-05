@@ -1,0 +1,4 @@
+<!doctype html>
+<!-- PROTOTYPE: Selected configuration layout A, ?variant=A. No real mutations. -->
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ModMux · 配置工作台原型</title><link rel="stylesheet" href="style.css"></head>
+<body><div id="app"></div><div id="modal"></div><aside id="prototype-bar" aria-label="原型方案与场景"><strong id="variant-name"></strong><span class="bar-divider"></span><select id="scenario" aria-label="切换配置场景"><option value="clean">已同步</option><option value="three">运行 A → 已存 B → 草稿 C</option><option value="invalid">路由冲突</option><option value="external">外部修改</option><option value="failed">应用失败</option><option value="stopped">网关停止</option><option value="recovery">草稿恢复</option><option value="empty">空工程</option></select><button data-action="state">状态</button><button data-action="reset">重置</button></aside><aside id="state-panel" hidden></aside><script src="app.js"></script></body></html>

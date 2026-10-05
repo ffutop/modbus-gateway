@@ -120,7 +120,7 @@ func (v *variantC1) linkItem(gtx C, l Link, depth int) D {
 	fg, secondary := colBody, colMuted
 	switch {
 	case l == cur:
-		bg, fg, secondary = colHover, colInk, colBody
+		bg, fg, secondary = colSelected, colOnSelected, colBody
 	case btn.Hovered():
 		bg = colSoft
 	}

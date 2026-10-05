@@ -51,7 +51,7 @@ type State struct {
 	Phase Phase
 	Err   error // set when Stopped
 	// Epoch changes whenever the workspace must be rebuilt from the config
-	// file: after a restart, or after a start attempt failed.
+	// file: after all listeners become ready, a start fails, or the child exits.
 	Epoch int
 }
 
@@ -68,3 +68,12 @@ type Fixed State
 
 func (f Fixed) State() State { return State(f) }
 func (Fixed) Restart()       {}
+
+// RecoveryRuntime can run the last successful configuration without replacing
+// the user's saved configuration file.
+type RecoveryRuntime interface {
+	Runtime
+	RestartWithConfig(string)
+	RunningConfig() string
+	LastGoodConfig() string
+}

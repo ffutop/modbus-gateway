@@ -49,11 +49,34 @@ func (f *File) Save(text string) error {
 		return err
 	}
 	if config.Revision(onDisk) != f.revision {
-		return fmt.Errorf("配置文件已被其他程序修改；本次未保存，请重新打开应用后合并修改")
+		return &Conflict{Baseline: f.Content, Disk: string(onDisk), Draft: text}
 	}
 	if err := config.WriteFile(f.Path, []byte(text)); err != nil {
 		return err
 	}
 	f.Content, f.revision = text, config.Revision([]byte(text))
+	return nil
+}
+
+// Conflict preserves all three texts without changing the optimistic baseline.
+type Conflict struct{ Baseline, Disk, Draft string }
+
+func (c *Conflict) Error() string {
+	return "配置文件已被其他程序修改；请查看三份文本并重新基准化后合并"
+}
+
+// Rebase accepts only the exact external version the user reviewed. A subsequent
+// external edit will still be rejected by Save's regular revision check.
+func (f *File) Rebase(reviewed string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	current, err := os.ReadFile(f.Path)
+	if err != nil {
+		return err
+	}
+	if string(current) != reviewed {
+		return &Conflict{Baseline: f.Content, Disk: string(current)}
+	}
+	f.Content, f.revision = reviewed, config.Revision(current)
 	return nil
 }

@@ -12,7 +12,8 @@ SHA-256 hashes identify the exact bundled files. Original upstream license is
 preserved in `OFL.txt` (SIL Open Font License 1.1, from `Sans/LICENSE`).
 The two OTFs total approximately 16 MiB and are embedded into the native binary.
 
-UI family chain: `Go, Noto Sans SC`; monospace family chain:
-`Go Mono, Noto Sans SC`. System font discovery is disabled. A character already
-covered by Go remains in Go; missing characters fall back to Noto Sans SC.
+UI family: `Noto Sans SC` for both Chinese and Latin text, so mixed strings
+share one design; monospace family chain: `Go Mono, Noto Sans SC`. System font
+discovery is disabled. In monospace text a character already covered by Go Mono
+remains in Go Mono; missing characters fall back to Noto Sans SC.
 Disclosure triangles are drawn geometry rather than font glyphs.

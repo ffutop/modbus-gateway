@@ -204,8 +204,8 @@ func (v *linkedView) trafficRow(gtx C, l Link, x *Exchange, detail detailFunc) D
 	rowBody, rowMuted := colBody, colMuted
 	switch {
 	case open:
-		bg = colHover
-		rowBody, rowMuted = colInk, colBody
+		bg = colSelected
+		rowBody, rowMuted = colOnSelected, colBody
 	case btn.Hovered():
 		bg = colSoft
 	}

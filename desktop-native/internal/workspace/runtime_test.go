@@ -113,3 +113,38 @@ func TestRestartAsksForConfirmationFirst(t *testing.T) {
 		t.Fatalf("confirm: confirming = %v, restarts = %d; want one restart", s.confirming, rt.restarts)
 	}
 }
+
+func TestDeleteDialogKeepsReferencePickerAndCancelInModal(t *testing.T) {
+	text := liveConfig("127.0.0.1:15020")
+	u := New(Info{Config: parsed(t, text), Content: text, Running: true})
+	s, e := u.view.shell, u.view.shell.cfg
+	s.module = 1
+	e.navigate("simulations.0")
+	frame := func() {
+		var ops op.Ops
+		u.Layout(layout.Context{Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1100, 680))})
+	}
+	frame()
+	before := e.recoveryContent()
+	e.structure.get("request-delete|simulations.0").Click()
+	frame()
+	if !s.modalOpen() {
+		t.Fatal("delete did not open modal")
+	}
+	if e.recoveryContent() != before {
+		t.Fatal("opening dialog changed draft")
+	}
+	e.wb.clicks.get("picker|replace-all").Click()
+	frame()
+	if !s.modalOpen() || e.wb.picker == "" {
+		t.Fatal("reference picker escaped deletion modal")
+	}
+	e.structure.get("cancel-delete|").Click()
+	frame()
+	if s.modalOpen() || e.wb.picker != "" {
+		t.Fatal("cancel left a modal or picker open")
+	}
+	if e.recoveryContent() != before {
+		t.Fatal("cancel changed draft")
+	}
+}

@@ -97,6 +97,10 @@ func (e *configEditor) visualYAML() string {
 	if err != nil || cfg.Version != 1 {
 		return source
 	}
+	var previous yaml.Node
+	if yaml.Unmarshal([]byte(toYAML(cfg)), &previous) != nil {
+		return source
+	}
 	for gi, g := range e.draft.Gateways {
 		for di, d := range g.Downstreams {
 			base := fmt.Sprintf("gateways.%d.downstreams.%d", gi, di)
@@ -122,7 +126,7 @@ func (e *configEditor) visualYAML() string {
 			}
 			parts := strings.Split(s.path, ".")
 			v := yamlAt(&canonical, parts)
-			old := yamlAt(&original, parts)
+			old := yamlAt(&previous, parts)
 			if v != nil && (old == nil || old.Value != v.Value) {
 				yamlPut(&original, parts, v)
 			}
@@ -134,18 +138,22 @@ func (e *configEditor) visualYAML() string {
 	}
 	return string(out)
 }
-func (e *configEditor) pendingChanges() []change {
-	saved, nodes := e.baseline, e.baseNode
-	cfg, err := config.ParseDraft([]byte(e.runningYAML))
+func (e *configEditor) computePendingChanges() []change {
+	saved, err := config.ParseDraft([]byte(e.savedYAML))
 	if err != nil {
-		return e.changes()
+		return nil
 	}
-	other := &configEditor{draft: cfg, eds: map[string]*widget.Editor{}}
-	other.rebuild()
-	other.commitBaseline()
-	e.baseline, e.baseNode = other.baseline, other.baseNode
-	out := e.changes()
-	e.baseline, e.baseNode = saved, nodes
+	running, err := config.ParseDraft([]byte(e.runningYAML))
+	if err != nil {
+		return nil
+	}
+	before := &configEditor{draft: running, ids: copyIDs(e.runningIDs), nextID: e.nextID, eds: map[string]*widget.Editor{}}
+	before.rebuild()
+	before.commitBaseline()
+	after := &configEditor{draft: saved, ids: copyIDs(e.savedIDs), nextID: e.nextID, eds: map[string]*widget.Editor{}}
+	after.rebuild()
+	after.baseline, after.baseNode, after.baseKinds, after.basePaths = before.baseline, before.baseNode, before.baseKinds, before.basePaths
+	out := after.changes()
 	if len(out) == 0 && e.savedYAML != e.runningYAML {
 		out = append(out, change{label: "文件文本 / 高级配置", old: e.runningYAML, new: e.savedYAML})
 	}
@@ -167,6 +175,7 @@ func (e *configEditor) updateMappings(gtx C) {
 	for path, b := range e.mapAdd {
 		if b.Clicked(gtx) {
 			if d := e.downstream(path); d != nil {
+				e.beginEdit()
 				d.Mappings = append(d.Mappings, config.MappingConfig{Source: config.MappingSourceConfig{Table: "holding_registers", Count: 1}, Target: config.MappingTargetConfig{Table: "input_registers"}})
 				e.rebuild()
 			}
@@ -177,6 +186,7 @@ func (e *configEditor) updateMappings(gtx C) {
 			i := strings.LastIndex(path, ".")
 			idx, _ := strconv.Atoi(path[i+1:])
 			if d := e.downstream(path[:i]); d != nil && idx < len(d.Mappings) {
+				e.beginEdit()
 				d.Mappings = append(d.Mappings[:idx], d.Mappings[idx+1:]...)
 				e.rebuild()
 			}
@@ -189,10 +199,10 @@ func (e *configEditor) mappingActions(gtx C, n *cfgNode) D {
 		return D{}
 	}
 	var children []layout.FlexChild
-	children = append(children, layout.Rigid(func(gtx C) D { return e.th.button(gtx, e.mapAdd.get(n.path), "+ 添加映射", false) }))
+	children = append(children, layout.Rigid(func(gtx C) D { return e.th.button(gtx, e.mapAdd.get(n.path), "+ 添加映射", btnDefault) }))
 	for i := range d.Mappings {
 		children = append(children, gap(6), layout.Rigid(func(gtx C) D {
-			return e.th.button(gtx, e.mapRemove.get(fmt.Sprintf("%s.%d", n.path, i)), fmt.Sprintf("删除映射 %d", i+1), false)
+			return e.th.button(gtx, e.mapRemove.get(fmt.Sprintf("%s.%d", n.path, i)), fmt.Sprintf("删除映射 %d", i+1), btnDanger)
 		}))
 	}
 	return layout.Inset{Left: 24, Bottom: 12}.Layout(gtx, func(gtx C) D { return layout.Flex{}.Layout(gtx, children...) })
@@ -272,17 +282,39 @@ func (e *configEditor) updateIssues(gtx C) {
 			}
 		} else {
 			n := e.deepest(path)
-			e.sel = n.path
-			e.form.Position.First = 0
-			for i, s := range n.specs {
-				if strings.HasPrefix(s.path, path) || strings.HasPrefix(path, s.path) {
-					e.form.Position.First = i + 1
-					if ed := e.eds[s.path]; ed != nil {
-						gtx.Execute(key.FocusCmd{Tag: ed})
-					}
-					break
+			e.navigate(n.path)
+			e.wb.advanced[n.id] = true
+			if n.gw >= 0 {
+				if g := e.node(fmt.Sprintf("gateways.%d", n.gw)); g != nil {
+					e.wb.collapsed[g.id] = false
 				}
 			}
+			e.form.Position.First = 0
+			index := 1
+			for _, s := range n.specs {
+				if s.visible() && !strings.Contains(s.path, ".simulation.mappings.") {
+					if strings.HasPrefix(s.path, path) || strings.HasPrefix(path, s.path) {
+						e.form.Position.First = index
+						if ed := e.eds[s.path]; ed != nil {
+							gtx.Execute(key.FocusCmd{Tag: ed})
+						}
+						break
+					}
+					index++
+				}
+			}
+			if strings.Contains(path, ".simulation.mappings.") {
+				e.form.Position.First = index + 2
+				for _, s := range n.specs {
+					if s.path == path {
+						if ed := e.eds[s.path]; ed != nil {
+							gtx.Execute(key.FocusCmd{Tag: ed})
+						}
+						break
+					}
+				}
+			}
+
 		}
 	}
 }
@@ -304,6 +336,7 @@ func (e *configEditor) mappingGrid(gtx C, n *cfgNode) D {
 	}
 	titles := []string{"源表", "源地址", "数量", "目标表", "目标地址"}
 	var rows []layout.FlexChild
+	rows = append(rows, layout.Rigid(e.th.label("零基地址 0–65535；设备手册中的 4xxxx 编号需要按其约定换算。", smallSize, colMuted).Layout), vgap(8))
 	rows = append(rows, layout.Rigid(func(gtx C) D {
 		var cols []layout.FlexChild
 		for _, t := range titles {
@@ -331,13 +364,12 @@ func (e *configEditor) mappingGrid(gtx C, n *cfgNode) D {
 								btns = clicks[string]{}
 								e.opts[s.path] = btns
 							}
-							var buttons []layout.FlexChild
-							for _, opt := range s.options {
-								buttons = append(buttons, layout.Rigid(func(gtx C) D { return e.th.chip(gtx, btns.get(opt), labels[opt], s.get() == opt) }))
-							}
-							return layout.Flex{}.Layout(gtx, buttons...)
+							return layout.Flex{}.Layout(gtx, e.th.segmented(len(s.options), func(i int) (*widget.Clickable, string, bool) {
+								opt := s.options[i]
+								return btns.get(opt), labels[opt], s.get() == opt
+							})...)
 						}
-						border := colHair
+						border := colControl
 						if e.fieldErr(s) != "" {
 							border = colErrSolid
 						}
@@ -350,13 +382,17 @@ func (e *configEditor) mappingGrid(gtx C, n *cfgNode) D {
 							st.TextSize = textSize
 							st.LineHeight = uiLineHeight(textSize)
 							st.LineHeightScale = 1
-							return layout.UniformInset(6).Layout(gtx, st.Layout)
+							return layout.Inset{Left: 9, Right: 9, Top: 3, Bottom: 3}.Layout(gtx, st.Layout)
 						})
 					})
 				}))
 			}
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx, cols...)
-		}), vgap(8))
+		}), vgap(4))
+		m := d.Mappings[mi]
+		if m.Source.Count > 0 {
+			rows = append(rows, layout.Rigid(e.th.label(fmt.Sprintf("源 %d–%d → 目标 %d–%d", m.Source.StartAddress, uint32(m.Source.StartAddress)+uint32(m.Source.Count)-1, m.Target.StartAddress, uint32(m.Target.StartAddress)+uint32(m.Source.Count)-1), smallSize, colMuted).Layout), vgap(8))
+		}
 	}
 	return layout.Inset{Left: 24, Right: 24, Bottom: 12}.Layout(gtx, func(gtx C) D { return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...) })
 }
@@ -422,29 +458,35 @@ func (e *configEditor) parseDiagnostic() (int, string) {
 	return line, description + "\n详细原因：" + e.rawErr
 }
 
-// optionChips wraps choices without hiding the last option in narrow forms.
+// optionChips lays out choices as a segmented control, wrapping onto further
+// rows in narrow forms rather than hiding the last option.
 func (e *configEditor) optionChips(gtx C, s *spec, btns clicks[string]) D {
 	labels := map[string]string{"holding_registers": "保持寄存器", "coils": "线圈", "input_registers": "输入寄存器", "discrete_inputs": "离散输入"}
+	label := func(opt string) string {
+		if text, ok := labels[opt]; ok {
+			return text
+		}
+		return opt
+	}
 	available := float32(gtx.Constraints.Max.X) / gtx.Metric.PxPerDp
 	var rows []layout.FlexChild
-	var choices []layout.FlexChild
+	var line []string
 	used := float32(0)
 	flush := func() {
-		if len(choices) > 0 {
-			line := choices
-			rows = append(rows, layout.Rigid(func(gtx C) D { return layout.Flex{Alignment: layout.Middle}.Layout(gtx, line...) }), vgap(4))
-			choices = nil
+		if len(line) > 0 {
+			opts := line
+			rows = append(rows, layout.Rigid(func(gtx C) D {
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, e.th.segmented(len(opts), func(i int) (*widget.Clickable, string, bool) {
+					return btns.get(opts[i]), label(opts[i]), s.get() == opts[i]
+				})...)
+			}), vgap(4))
+			line = nil
 			used = 0
 		}
 	}
 	for _, opt := range s.options {
-		opt := opt
-		label := opt
-		if text, ok := labels[opt]; ok {
-			label = text
-		}
-		width := float32(20)
-		for _, r := range label {
+		width := float32(22)
+		for _, r := range label(opt) {
 			if r > 127 {
 				width += 13
 			} else {
@@ -454,8 +496,8 @@ func (e *configEditor) optionChips(gtx C, s *spec, btns clicks[string]) D {
 		if used+width > available {
 			flush()
 		}
-		choices = append(choices, layout.Rigid(func(gtx C) D { return e.th.chip(gtx, btns.get(opt), label, s.get() == opt) }), gap(4))
-		used += width + 4
+		line = append(line, opt)
+		used += width
 	}
 	flush()
 	return layout.Inset{Top: 3}.Layout(gtx, func(gtx C) D { return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...) })
@@ -485,4 +527,55 @@ func (e *configEditor) mappingConflict(p config.Problem, target bool) string {
 	}
 	labels := map[string]string{"holding_registers": "保持寄存器", "coils": "线圈", "input_registers": "输入寄存器", "discrete_inputs": "离散输入"}
 	return fmt.Sprintf("%s：映射 %d 的%s @%d–%d %s", node.title(), idx+1, labels[tableName], start, start+int(m.Source.Count)-1, text)
+}
+
+func (e *configEditor) issueSummary(gtx C) D {
+	if len(e.problems) == 0 {
+		return D{}
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			return layout.Inset{Left: 16, Right: 16}.Layout(gtx, func(gtx C) D {
+				return row(gtx, 32,
+					layout.Rigid(func(gtx C) D {
+						return e.wbButton(gtx, "show-issues", fmt.Sprintf("%d 处问题", len(e.problems)), btnLink)
+					}), gap(8),
+					layout.Flexed(1, func(gtx C) D {
+						p := e.problems[0]
+						return e.issueBtn.get(problemPath(p)).Layout(gtx, func(gtx C) D {
+							l := e.th.label("定位 · "+e.humanProblem(p), smallSize, colErr)
+							l.MaxLines = 1
+							return l.Layout(gtx)
+						})
+					}))
+			})
+		}),
+		layout.Rigid(func(gtx C) D {
+			if !e.showIssues {
+				return D{}
+			}
+			gtx.Constraints.Max.Y = gtx.Dp(96)
+			return e.issueList(gtx)
+		}))
+}
+
+func (e *configEditor) pendingChanges() []change {
+	if !e.pendingDiffValid || e.pendingDiffSaved != e.savedYAML || e.pendingDiffRunning != e.runningYAML {
+		e.pendingDiff = e.computePendingChanges()
+		e.pendingDiffSaved, e.pendingDiffRunning = e.savedYAML, e.runningYAML
+		e.pendingDiffValid = true
+	}
+	out := append([]change(nil), e.pendingDiff...)
+	for i := range out {
+		if out[i].node != nil {
+			if n := e.nodeByID(out[i].node.id); n != nil {
+				copyNode := *out[i].node
+				copyNode.path = n.path
+				out[i].node = &copyNode
+			} else {
+				out[i].node = nil
+			}
+		}
+	}
+	return out
 }

@@ -101,8 +101,8 @@ func TestSidecarServesTrafficRegistersAndListenerState(t *testing.T) {
 	s := newSupervisor(t, writeConfig(t, up))
 	s.Start()
 	eventually(t, "running", phase(s, live.Running))
-	if s.State().Epoch != 0 {
-		t.Fatalf("a successful first start changed the epoch: %+v", s.State())
+	if s.State().Epoch != 1 {
+		t.Fatalf("first healthy start did not publish its baseline: %+v", s.State())
 	}
 	eventually(t, "listener state", func() bool {
 		u := s.Upstreams()
@@ -145,6 +145,7 @@ func TestRestartReloadsTheConfigAndChangesTheEpoch(t *testing.T) {
 	s.Start()
 	eventually(t, "running", phase(s, live.Running))
 
+	previousEpoch := s.State().Epoch
 	// The saved file now names a second listener; a restart applies it.
 	if err := os.WriteFile(config, []byte(strings.Replace(mustRead(t, config), first, second, 1)), 0600); err != nil {
 		t.Fatal(err)
@@ -153,7 +154,7 @@ func TestRestartReloadsTheConfigAndChangesTheEpoch(t *testing.T) {
 	if p := s.State().Phase; p != live.Starting {
 		t.Fatalf("phase right after Restart = %v, want Starting", p)
 	}
-	eventually(t, "restarted", func() bool { st := s.State(); return st.Phase == live.Running && st.Epoch == 1 })
+	eventually(t, "restarted", func() bool { st := s.State(); return st.Phase == live.Running && st.Epoch == previousEpoch+1 })
 	if _, err := net.Dial("tcp", second); err != nil {
 		t.Fatalf("new listener not up after restart: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestStartFailureExplainsWithTheGatewayOutput(t *testing.T) {
 	}
 }
 
-func TestListenerFailureIsReportedWhileRunning(t *testing.T) {
+func TestListenerFailureDoesNotCommitRunningBaseline(t *testing.T) {
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -184,10 +185,13 @@ func TestListenerFailureIsReportedWhileRunning(t *testing.T) {
 	defer busy.Close()
 	s := newSupervisor(t, writeConfig(t, freeAddr(t), busy.Addr().String()))
 	s.Start()
-	eventually(t, "one listener failed", func() bool {
-		u := s.Upstreams()
-		return len(u) == 2 && u[0].State == gateway.UpstreamListening && u[1].State == gateway.UpstreamFailed && u[1].Error != ""
-	})
+	eventually(t, "listener failure", phase(s, live.Stopped))
+	if st := s.State(); st.Err == nil || !strings.Contains(st.Err.Error(), "Modbus 监听失败") {
+		t.Fatalf("missing listener error: %+v", st)
+	}
+	if s.RunningConfig() != "" || s.LastGoodConfig() != "" {
+		t.Fatal("unhealthy config committed as running or last good")
+	}
 }
 
 func TestCrashIsReportedAndRestartRecovers(t *testing.T) {
@@ -199,11 +203,11 @@ func TestCrashIsReportedAndRestartRecovers(t *testing.T) {
 	s.mu.Unlock()
 	p.cmd.Process.Kill()
 	eventually(t, "crash noticed", phase(s, live.Stopped))
-	if st := s.State(); st.Err == nil || !strings.Contains(st.Err.Error(), "网关意外退出") || st.Epoch != 0 {
-		t.Fatalf("state = %+v, want an unexpected exit, same epoch", st)
+	if st := s.State(); st.Err == nil || !strings.Contains(st.Err.Error(), "网关意外退出") || st.Epoch != 2 {
+		t.Fatalf("state = %+v, want an unexpected exit and refreshed workspace", st)
 	}
 	s.Restart()
-	eventually(t, "recovered", func() bool { st := s.State(); return st.Phase == live.Running && st.Epoch == 1 })
+	eventually(t, "recovered", func() bool { st := s.State(); return st.Phase == live.Running && st.Epoch == 3 })
 }
 
 func TestStopEndsTheChildGracefully(t *testing.T) {
@@ -238,4 +242,28 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestRestoreLastHealthyConfigDoesNotOverwriteSavedFile(t *testing.T) {
+	up := freeAddr(t)
+	path := writeConfig(t, up)
+	original := mustRead(t, path)
+	s := newSupervisor(t, path)
+	s.Start()
+	eventually(t, "healthy snapshot", func() bool { return s.LastGoodConfig() == original })
+	invalid := "version: 1\ngateways: []\n"
+	if err := os.WriteFile(path, []byte(invalid), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.Restart()
+	eventually(t, "failed new config", phase(s, live.Stopped))
+	if s.LastGoodConfig() != original {
+		t.Fatal("failed launch replaced good snapshot")
+	}
+	s.RestartWithConfig(s.LastGoodConfig())
+	eventually(t, "recovered runtime", phase(s, live.Running))
+	eventually(t, "recovered listener", func() bool { u := s.Upstreams(); return len(u) == 1 && u[0].State == gateway.UpstreamListening })
+	if mustRead(t, path) != invalid || s.RunningConfig() != original {
+		t.Fatal("runtime recovery changed saved file or reported wrong snapshot")
+	}
 }

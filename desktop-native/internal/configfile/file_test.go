@@ -1,6 +1,7 @@
 package configfile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,5 +98,44 @@ func TestSaveKeepsSymlinkAndLegacySchema(t *testing.T) {
 	b, _ := os.ReadFile(link)
 	if string(b) != legacy {
 		t.Fatal("legacy text upgraded")
+	}
+}
+
+func TestRebaseRequiresReviewedDiskAndChecksNextExternalEdit(t *testing.T) {
+	f := fixture(t)
+	draft := valid + "# draft\n"
+	external := valid + "# external\n"
+	if err := os.WriteFile(f.Path, []byte(external), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := f.Save(draft)
+	var conflict *Conflict
+	if !errors.As(err, &conflict) || conflict.Baseline != valid || conflict.Disk != external || conflict.Draft != draft {
+		t.Fatalf("missing three-way conflict: %v", err)
+	}
+	if f.Content != valid {
+		t.Fatal("viewing conflict changed baseline")
+	}
+	if err := f.Rebase(external); err != nil {
+		t.Fatal(err)
+	}
+	newer := external + "# changed again\n"
+	if err := os.WriteFile(f.Path, []byte(newer), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Save(draft); err == nil {
+		t.Fatal("second external edit overwritten")
+	}
+	if err := f.Rebase(external); err == nil {
+		t.Fatal("unreviewed disk accepted")
+	}
+	if err := f.Rebase(newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Save(draft); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(f.Path); string(b) != draft {
+		t.Fatal("merged draft not saved")
 	}
 }

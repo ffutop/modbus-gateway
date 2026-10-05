@@ -2,9 +2,10 @@
 
 按用户最新要求，以 VS Code 等开发工具的简洁几何语言重新设计。蓝色交叠折带构成 M，中央交汇表达网关汇聚与分流；不用玻璃底板、金属高光、圆形端点或文字，外侧透明。
 
-- 源图：`ModMux-devtools-v3.png`。
-- macOS 图标：`ModMux-devtools-v3.icns`，含普通及 Retina 尺寸。
-- 当前打包脚本使用 v3，在应用资源中命名为 `ModMux.icns`。
+- 源图：`ModMux-devtools-v3.png`（本目录），三个平台的图标都由它派生。
+- macOS：`../macos/ModMux-devtools-v3.icns`，含普通及 Retina 尺寸，打包时在应用资源中命名为 `ModMux.icns`。
+- Windows：`package-windows.sh` 构建时用 go-winres 从源图生成 256/64/48/32/16 像素的图标资源（ID 1），连同版本信息嵌入 exe。
+- Linux：`../linux/icons/modmux-<尺寸>.png`（16–512 像素），打包时放入 `share/icons/hicolor`。更换源图后在 macOS 上重新生成：`for s in 16 24 32 48 64 128 256 512; do sips -s format png -z $s $s ModMux-devtools-v3.png --out ../linux/icons/modmux-$s.png; done`。
 - 生成方式：内置 imagegen；之前版本保留作为探索记录。
 
 完整提示词：

@@ -7,3 +7,7 @@ modbus-gateway
 desktop-native/modmux-desktop
 desktop-native/modmux-desktop.exe
 desktop-native/dist/
+desktop-native/*.syso
+
+# Native configuration recovery records
+*.modmux-draft.json

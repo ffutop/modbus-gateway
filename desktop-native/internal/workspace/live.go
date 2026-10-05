@@ -292,13 +292,21 @@ type UI struct {
 }
 
 type Info struct {
-	Config   *config.Config
-	Content  string // the config file text the gateway was started with
-	Running  bool   // the gateway was started (or is starting) on Content
-	StartErr error
-	Source   live.Source  // nil shows no traffic
-	Runtime  live.Runtime // nil: a fixed state from Running and StartErr
-	Save     func(string) error
+	RunningContent string
+	DraftBase      string
+	Draft          string
+	DraftConflict  bool
+	SaveDraft      func(string)
+	ClearDraft     func() error
+	DraftError     func() error
+	Config         *config.Config
+	Content        string // the config file text the gateway was started with
+	Running        bool   // the gateway was started (or is starting) on Content
+	StartErr       error
+	Source         live.Source  // nil shows no traffic
+	Runtime        live.Runtime // nil: a fixed state from Running and StartErr
+	Rebase         func(string) error
+	Save           func(string) error
 }
 
 func New(info Info) *UI {
@@ -312,7 +320,13 @@ func New(info Info) *UI {
 		}
 		info.Runtime = live.Fixed(st)
 	}
-	w := newLiveWorld(info.Config, info.Source)
+	running := info.Config
+	if info.RunningContent != "" {
+		if cfg, err := config.ParseDraft([]byte(info.RunningContent)); err == nil {
+			running = cfg
+		}
+	}
+	w := newLiveWorld(running, info.Source)
 	w.rt = info.Runtime
 	th := NewTheme()
 	cfg := newConfigEditor(th, info)
@@ -348,4 +362,14 @@ func (u *UI) Layout(gtx C) D {
 	}
 	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(next)})
 	return u.view.Layout(gtx)
+}
+
+// CarryDraftTo keeps edits made while a restart was in flight reviewable after
+// the workspace is reconstructed. It never changes the saved or running text.
+func (u *UI) CarryDraftTo(next *UI) {
+	if u.view.shell.cfg.unsaved() {
+		next.view.shell.cfg.recoveryText = u.view.shell.cfg.recoveryContent()
+		next.view.shell.cfg.recoveryConflict = false
+		next.view.shell.module = 1
+	}
 }

@@ -3,6 +3,7 @@
 # packages: install-linux-deps.sh installs them, and with an architecture
 # argument the multiarch libraries and cross compiler that a GOARCH other than
 # the host's uses here. Set CC and PKG_CONFIG_LIBDIR to use another toolchain.
+# The package's install.sh adds the app and its icon to the application menu.
 set -eu
 
 if [ "$(uname -s)" != "Linux" ]; then
@@ -30,9 +31,23 @@ fi
 stage=$(stage_dir linux)
 name="modmux-desktop-linux-$arch"
 mkdir "$stage/$name"
+# Gio names the window after app.ID (X11 WM_CLASS, Wayland app_id) and sets no
+# icon itself: the desktop finds it through the desktop entry of that name,
+# which install.sh adds to the user's application menu with the icons.
+app_id=com.ffutop.modmux.native
 CGO_ENABLED=1 GOOS=linux GOARCH="$arch" \
-    go build -trimpath -ldflags "$ldflags" -o "$stage/$name/modmux-desktop" .
+    go build -trimpath -ldflags "$ldflags -X gioui.org/app.ID=$app_id" -o "$stage/$name/modmux-desktop" .
 copy_shared "$stage/$name"
+cp packaging/linux/install.sh "$stage/$name/install.sh"
+chmod +x "$stage/$name/install.sh"
+mkdir -p "$stage/$name/share/applications"
+cp "packaging/linux/$app_id.desktop" "$stage/$name/share/applications/$app_id.desktop"
+for icon in packaging/linux/icons/modmux-*.png; do
+    size=${icon##*/modmux-}
+    size=${size%.png}
+    mkdir -p "$stage/$name/share/icons/hicolor/${size}x$size/apps"
+    cp "$icon" "$stage/$name/share/icons/hicolor/${size}x$size/apps/$app_id.png"
+done
 
 archive="$output_dir/$name.tar.gz"
 tar -C "$stage" -czf "$archive" "$name"

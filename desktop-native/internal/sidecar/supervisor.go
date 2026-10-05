@@ -7,10 +7,14 @@ package sidecar
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
+	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
@@ -26,11 +30,15 @@ type Supervisor struct {
 	notify      func() // called after every state change, e.g. to repaint
 	out         Output
 
-	mu     sync.Mutex
-	state  live.State
-	busy   bool // a start, restart or stop is in progress
-	proc   *Process
-	client *Client
+	mu                    sync.Mutex
+	state                 live.State
+	closed                bool
+	usingRecovery         bool
+	busy                  bool // a start, restart or stop is in progress
+	runningText, lastGood string
+	override              string
+	proc                  *Process
+	client                *Client
 }
 
 // NewSupervisor prepares to run exe as the gateway on the config file. It
@@ -52,7 +60,7 @@ func (s *Supervisor) State() live.State {
 }
 
 // Start launches the gateway in the background. A failed attempt changes
-// the epoch; a successful first start keeps it.
+// the epoch; a healthy first start publishes its confirmed running baseline.
 func (s *Supervisor) Start() { s.begin(false) }
 
 // Restart stops the running gateway, if any, and starts it again on the
@@ -60,13 +68,25 @@ func (s *Supervisor) Start() { s.begin(false) }
 // another start or restart is in progress.
 func (s *Supervisor) Restart() { s.begin(true) }
 
-func (s *Supervisor) begin(restart bool) {
+func (s *Supervisor) RestartWithConfig(text string) { s.beginConfig(true, text) }
+func (s *Supervisor) RunningConfig() string {
 	s.mu.Lock()
-	if s.busy {
+	defer s.mu.Unlock()
+	if s.state.Phase != live.Running {
+		return ""
+	}
+	return s.runningText
+}
+func (s *Supervisor) LastGoodConfig() string { s.mu.Lock(); defer s.mu.Unlock(); return s.lastGood }
+func (s *Supervisor) begin(restart bool)     { s.beginConfig(restart, "") }
+func (s *Supervisor) beginConfig(restart bool, override string) {
+	s.mu.Lock()
+	if s.busy || s.closed {
 		s.mu.Unlock()
 		return
 	}
 	s.busy = true
+	s.override = override
 	s.state.Phase, s.state.Err = live.Starting, nil
 	s.mu.Unlock()
 	s.notify()
@@ -74,24 +94,56 @@ func (s *Supervisor) begin(restart bool) {
 }
 
 func (s *Supervisor) launch(restart bool) {
-	s.stopCurrent()
-	p, err := Launch(s.exe, Args(s.config), &s.out)
 	s.mu.Lock()
-	s.busy = false
+	override := s.override
+	s.override = ""
+	s.mu.Unlock()
+	bytes, _ := os.ReadFile(s.config)
+	var err error
+	if override != "" {
+		bytes = []byte(override)
+		err = nil
+	}
+	s.stopCurrent()
+	var p *Process
+	if err == nil {
+		path := s.config
+		if override != "" {
+			var file *os.File
+			file, err = os.CreateTemp(filepath.Dir(s.config), ".modmux-running-*.yaml")
+			if err == nil {
+				path = file.Name()
+				defer os.Remove(path)
+				_, err = file.Write(bytes)
+				closeErr := file.Close()
+				if err == nil {
+					err = closeErr
+				}
+			}
+		}
+		if err == nil {
+			p, err = Launch(s.exe, Args(path), &s.out)
+		}
+	}
+	s.mu.Lock()
 	if err != nil {
+		s.busy = s.closed
 		s.state = live.State{Phase: live.Stopped, Err: s.explain(err), Epoch: s.state.Epoch + 1}
 		s.mu.Unlock()
 		s.notify()
 		return
 	}
 	s.proc, s.client = p, NewClient(p.URL, p.Token, s.notify)
-	s.state.Phase = live.Running
-	if restart {
-		s.state.Epoch++
+	if s.closed {
+		s.mu.Unlock()
+		s.stopCurrent()
+		return
 	}
+	s.state.Phase = live.Starting
 	s.mu.Unlock()
 	s.notify()
 	go s.watch(p)
+	go s.rememberHealthy(p, string(bytes), override != "")
 }
 
 // watch reports an exit nobody asked for.
@@ -105,6 +157,8 @@ func (s *Supervisor) watch(p *Process) {
 	s.proc = nil
 	s.client.Close()
 	s.state.Phase, s.state.Err = live.Stopped, s.explain(fmt.Errorf("网关意外退出（%v）", p.Err()))
+	s.state.Epoch++
+	s.busy = s.closed
 	s.mu.Unlock()
 	s.notify()
 }
@@ -124,6 +178,7 @@ func (s *Supervisor) stopCurrent() {
 // Stop shuts the gateway down gracefully and waits for it; for app exit.
 func (s *Supervisor) Stop() {
 	s.mu.Lock()
+	s.closed = true
 	s.busy = true // no restarts from here on
 	s.mu.Unlock()
 	s.stopCurrent()
@@ -171,6 +226,98 @@ func (s *Supervisor) Registers(sim string, t live.Table, start, count uint16) ([
 func (s *Supervisor) Upstreams() []gateway.UpstreamStatus {
 	if c := s.running(); c != nil {
 		return c.Upstreams()
+	}
+	return nil
+}
+
+// A ready management API alone does not establish that Modbus listeners bind.
+func (s *Supervisor) rememberHealthy(p *Process, text string, recovered bool) {
+	expected := 0
+	if cfg, err := config.ParseDraft([]byte(text)); err == nil {
+		for _, g := range cfg.Gateways {
+			expected += len(g.Upstreams)
+		}
+	}
+	deadline := time.NewTimer(readyTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.Done():
+			return
+		case <-deadline.C:
+			s.failReadiness(p, fmt.Errorf("等待全部 Modbus 监听就绪超时"))
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			if s.proc != p {
+				s.mu.Unlock()
+				return
+			}
+			client := s.client
+			s.mu.Unlock()
+			ups := client.Upstreams()
+			if len(ups) == 0 {
+				continue
+			}
+			healthy := len(ups) == expected
+			for _, u := range ups {
+				if u.State == gateway.UpstreamFailed {
+					s.failReadiness(p, fmt.Errorf("Modbus 监听失败：%s / 上游 %d：%s", u.Gateway, u.Index+1, u.Error))
+					return
+				}
+				if u.State != gateway.UpstreamListening {
+					healthy = false
+				}
+			}
+			if healthy {
+				s.mu.Lock()
+				if s.proc == p {
+					s.lastGood, s.runningText = text, text
+					s.usingRecovery = recovered
+					s.state.Phase, s.state.Err = live.Running, nil
+					s.state.Epoch++
+					s.busy = false
+				}
+				s.mu.Unlock()
+				s.notify()
+				return
+			}
+		}
+	}
+}
+
+func (s *Supervisor) UsingRecovery() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.usingRecovery && s.state.Phase == live.Running
+}
+
+func (s *Supervisor) failReadiness(p *Process, err error) {
+	s.mu.Lock()
+	if s.proc != p || s.closed {
+		s.mu.Unlock()
+		return
+	}
+	client := s.client
+	s.proc, s.client = nil, nil
+	s.mu.Unlock()
+	client.Close()
+	p.Stop()
+	s.mu.Lock()
+	if !s.closed {
+		s.state.Phase, s.state.Err = live.Stopped, s.explain(err)
+		s.state.Epoch++
+	}
+	s.busy = s.closed
+	s.mu.Unlock()
+	s.notify()
+}
+
+func (s *Supervisor) ConnectionError() error {
+	if client := s.running(); client != nil {
+		return client.ConnectionError()
 	}
 	return nil
 }

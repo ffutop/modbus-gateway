@@ -2,16 +2,21 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/configfile"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 	"net"
+	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
-	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -22,6 +27,7 @@ import (
 // spec is one editable value of the draft, addressed by a path in the same
 // form as config.Problem paths ("gateways.0.downstreams.1.slave_ids").
 type spec struct {
+	advanced bool
 	path     string
 	label    string
 	hint     string
@@ -36,6 +42,7 @@ type spec struct {
 func (s *spec) visible() bool { return s.when == nil || s.when() }
 
 type cfgNode struct {
+	id    string // editor-only identity, never serialized
 	path  string // prefix of its specs
 	kind  string
 	title func() string
@@ -52,29 +59,89 @@ type change struct {
 }
 
 type configEditor struct {
-	th         *Theme
-	saveFile   func(string) error
-	configPath string
-	startErr   error
-	running    bool
+	nodesByID                            map[string]*cfgNode
+	pendingDiff                          []change
+	pendingDiffSaved, pendingDiffRunning string
+	pendingDiffValid                     bool
+	showIssues                           bool
+	focusedField                         string
+	changesCache                         []change
+	changesCacheVersion                  int
+	changesCacheSaved                    string
+	changesCacheValid                    bool
+	recoveryCacheVersion                 int
+	recoveryCacheText                    string
+	recoveryCacheValid                   bool
+	recoveryBase                         string
+	inputBlocked                         bool
+	showPath                             bool
+	inputText                            map[string]string
+	semanticSaved, semanticRunning       string
+	semanticValid, semanticPending       bool
+	refsVersion                          int
+	refsCache                            map[string][]string
+	conflict                             *configfile.Conflict
+	rebaseFile                           func(string) error
+	conflictView                         string
+	conflictEditor                       widget.Editor
+	runtime                              live.Runtime
+	pendingSaved, pendingRunning         string
+	pendingCache                         map[string]bool
+	diffRunning                          bool
+	diffModes                            [2]widget.Clickable
+	creation                             *configCreation
+	wb                                   workbenchState
+	dialogList                           widget.List
+	history                              []editRecord
+	future                               []editRecord
+	editBase                             *structureSnapshot
+	saveApply                            widget.Clickable
+	applyRequested                       bool
+	recoveryText                         string
+	recoveryConflict                     bool
+	saveDraft                            func(string)
+	clearDraft                           func() error
+	recoveryError                        func() error
+	lastRecovery                         string
+	recoveryChanged                      time.Time
+	th                                   *Theme
+	saveFile                             func(string) error
+	configPath                           string
+	startErr                             error
+	running                              bool
 
-	draft        *config.Config
-	baseline     map[string]string // path → value at the last save
-	baseNode     map[string]string // node path → title at the last save
-	savedYAML    string
-	runningYAML  string
-	saveFailed   bool
-	saveProblem  string
-	issueBtn     clicks[string]
-	mapAdd       clicks[string]
-	mapRemove    clicks[string]
-	visualLocked bool
-	nodes        []*cfgNode
-	sel          string // selected node path
-	eds          map[string]*widget.Editor
-	opts         map[string]clicks[string]
-	treeBtn      clicks[string]
-	addDs        clicks[int]
+	savedIDs        map[string]string
+	runningIDs      map[string]string
+	ids             map[string]string
+	nextID          int
+	baseKinds       map[string]string
+	basePaths       map[string]string
+	structure       clicks[string]
+	deletePath      string
+	replacements    map[string]string
+	structureErr    string
+	structureNotice string
+	undoState       *structureSnapshot
+	undoAfter       *structureSnapshot
+	undoFields      map[string]string
+	undoBtn         widget.Clickable
+	renameBtn       widget.Clickable
+	draft           *config.Config
+	baseline        map[string]string // path → value at the last save
+	baseNode        map[string]string // node path → title at the last save
+	savedYAML       string
+	runningYAML     string
+	saveFailed      bool
+	saveProblem     string
+	issueBtn        clicks[string]
+	mapAdd          clicks[string]
+	mapRemove       clicks[string]
+	visualLocked    bool
+	nodes           []*cfgNode
+	sel             string // selected node path
+	eds             map[string]*widget.Editor
+	opts            map[string]clicks[string]
+	treeBtn         clicks[string]
 
 	raw        bool
 	modes      [2]widget.Clickable
@@ -97,22 +164,39 @@ type configEditor struct {
 }
 
 func newConfigEditor(th *Theme, info Info) *configEditor {
-	e := &configEditor{th: th, saveFile: info.Save, configPath: info.Config.Path, startErr: info.StartErr, running: info.Running,
-		eds: map[string]*widget.Editor{}, opts: map[string]clicks[string]{}, treeBtn: clicks[string]{}, addDs: clicks[int]{}}
+	e := &configEditor{structure: clicks[string]{}, runtime: info.Runtime, rebaseFile: info.Rebase, th: th, saveFile: info.Save, configPath: info.Config.Path, startErr: info.StartErr, running: info.Running,
+		inputText: map[string]string{}, eds: map[string]*widget.Editor{}, opts: map[string]clicks[string]{}, treeBtn: clicks[string]{}}
 	e.tree.Axis, e.form.Axis, e.side.Axis, e.rawList.Axis = layout.Vertical, layout.Vertical, layout.Vertical, layout.Vertical
 	e.issueScroll.Axis = layout.Vertical
 	e.draft, _ = config.ParseDraft([]byte(info.Content))
 	if e.draft == nil {
 		e.draft = &config.Config{}
 	}
+	e.initWorkbench(info)
 	e.savedYAML, e.rawSynced = info.Content, info.Content
 	e.rawEd.SetText(info.Content)
 	e.rebuild()
 	e.commitBaseline()
+	e.sel = "group:网关"
 	if info.Running {
 		e.runningYAML = info.Content
+		if info.RunningContent != "" {
+			e.runningYAML = info.RunningContent
+		}
+		e.runningIDs = copyIDs(e.ids)
 	}
 	e.issueBtn, e.mapAdd, e.mapRemove = clicks[string]{}, clicks[string]{}, clicks[string]{}
+	if info.RunningContent != "" && info.RunningContent != info.Content {
+		old := e.draft
+		e.draft, _ = config.ParseDraft([]byte(info.RunningContent))
+		if e.draft != nil {
+			e.reconcileRawIDs()
+			e.runningIDs = copyIDs(e.ids)
+		}
+		e.draft = old
+		e.ids = copyIDs(e.savedIDs)
+		e.rebuild()
+	}
 	e.checked = -1
 	e.raw = info.Config.Version != 1 || info.StartErr != nil
 	e.visualLocked = info.Config.Version != 1
@@ -147,6 +231,9 @@ func toYAML(c *config.Config) string {
 	if c.UI.Enabled {
 		p(1, "listen: %s", q(c.UI.Listen))
 	}
+	p(0, "pprof:")
+	p(1, "enabled: %t", c.Pprof.Enabled)
+	p(1, "address: %s", q(c.Pprof.Address))
 	p(0, "simulations:")
 	for _, s := range c.Simulations {
 		p(1, "- name: %s", q(s.Name))
@@ -193,6 +280,7 @@ func writeLink(p func(int, string, ...any), indent int, typ string, tcp config.T
 		p(indent, "serial:")
 		p(indent+1, "device: %s", q(serial.Device))
 		p(indent+1, "baud_rate: %d", serial.BaudRate)
+		writeSerial(p, indent+1, serial)
 		return
 	}
 	p(indent, "tcp:")
@@ -232,6 +320,9 @@ func strSpec(path, label string, p *string) *spec {
 // rebuild derives the nodes and specs from the draft. Call it whenever the
 // draft's structure changes (added downstream, re-parsed YAML).
 func (e *configEditor) rebuild() {
+	if e.inputText == nil {
+		e.inputText = map[string]string{}
+	}
 	c := e.draft
 	var nodes []*cfgNode
 	var simNames []string
@@ -249,8 +340,12 @@ func (e *configEditor) rebuild() {
 		set: func(v string) { c.UI.Enabled = v == "开启" }}
 	uiListen := strSpec("ui.listen", "监听地址", &c.UI.Listen)
 	uiListen.when, uiListen.check = func() bool { return c.UI.Enabled }, checkAddr
-	uiListen.hint = "管理 API 监听地址；桌面版自身不需要开启"
+	uiOn.advanced, uiListen.advanced = true, true
+	uiOn.label = "管理 API（CLI）"
+	uiOn.hint = "仅用于直接 CLI 运行；桌面管理连接由 sidecar 覆盖"
+	uiListen.hint = "桌面版由子进程管理 API 监听地址；此项用于命令行运行"
 	g.specs = []*spec{level, file, uiOn, uiListen}
+	g.specs = append(g.specs, globalAdvanced(c)...)
 	nodes = append(nodes, g)
 
 	for i := range c.Simulations {
@@ -259,7 +354,7 @@ func (e *configEditor) rebuild() {
 		n := &cfgNode{path: base, kind: "模拟模型", title: func() string { return s.Name }, gw: -1}
 		name := strSpec(base+".name", "名称", &s.Name)
 		name.check = checkName
-		name.hint = "改名后，引用它的下游需要同步修改"
+		name.hint = "完成编辑时同步更新所有引用"
 		pt := strSpec(base+".persistence.type", "持久化", &s.Persistence.Type)
 		pt.options = []string{"memory", "file", "mmap", "sql"}
 		pp := strSpec(base+".persistence.path", "路径", &s.Persistence.Path)
@@ -271,9 +366,13 @@ func (e *configEditor) rebuild() {
 	for i := range c.Gateways {
 		gw := &c.Gateways[i]
 		base := fmt.Sprintf("gateways.%d", i)
-		gn := &cfgNode{path: base, kind: "网关", title: func() string { return gw.Name }, gw: i}
+		gn := &cfgNode{path: base, kind: "网关", title: func() string {
+			if gw.Name == "" {
+				return fmt.Sprintf("网关 %d", i+1)
+			}
+			return gw.Name
+		}, gw: i}
 		name := strSpec(base+".name", "名称", &gw.Name)
-		name.check = checkName
 		gn.specs = []*spec{name}
 		nodes = append(nodes, gn)
 		for k := range gw.Upstreams {
@@ -286,17 +385,17 @@ func (e *configEditor) rebuild() {
 			ua.when, ua.check = func() bool { return u.Type != "rtu" }, checkAddr
 			ud := strSpec(ub+".serial.device", "串口", &u.Serial.Device)
 			ud.when = func() bool { return u.Type == "rtu" }
-			baud := intSpec(ub+".serial.baud_rate", "波特率", &u.Serial.BaudRate, []string{"9600", "19200", "38400", "115200"})
+			baud := baudSpec(ub+".serial.baud_rate", &u.Serial.BaudRate)
 			baud.when = ud.when
 			un.specs = []*spec{ut, ua, ud, baud}
+			un.specs = append(un.specs, serialSpecs(ub, &u.Serial, ud.when)...)
 			nodes = append(nodes, un)
 		}
 		for j := range gw.Downstreams {
 			d := &gw.Downstreams[j]
 			db := fmt.Sprintf("%s.downstreams.%d", base, j)
-			dn := &cfgNode{path: db, kind: "下游", depth: 1, title: func() string { return d.Name }, gw: i}
+			dn := &cfgNode{path: db, kind: "下游", depth: 1, title: func() string { return d.DisplayName(j) }, gw: i}
 			name := strSpec(db+".name", "名称", &d.Name)
-			name.check = checkName
 			dt := strSpec(db+".type", "类型", &d.Type)
 			dt.options = []string{"local", "injector", "tcp", "rtu-over-tcp", "rtu"}
 			ids := strSpec(db+".slave_ids", "从站 ID", &d.SlaveIDs)
@@ -308,12 +407,13 @@ func (e *configEditor) rebuild() {
 			da.when, da.check = sockets, checkAddr
 			dd := strSpec(db+".serial.device", "串口", &d.Serial.Device)
 			dd.when = serial
-			baud := intSpec(db+".serial.baud_rate", "波特率", &d.Serial.BaudRate, []string{"9600", "19200", "38400", "115200"})
+			baud := baudSpec(db+".serial.baud_rate", &d.Serial.BaudRate)
 			baud.when = serial
 			ref := strSpec(db+".simulation.ref", "模拟模型", &d.SimulationRef)
 			ref.options, ref.when = simNames, model
 			ref.hint = "多个下游可以引用同一个模型，共享数据"
 			dn.specs = []*spec{name, dt, ids, da, dd, baud, ref}
+			dn.specs = append(dn.specs, serialSpecs(db, &d.Serial, serial)...)
 			if d.Type == "injector" {
 				for mi := range d.Mappings {
 					m := &d.Mappings[mi]
@@ -321,30 +421,49 @@ func (e *configEditor) rebuild() {
 					st := strSpec(mb+".source.table", fmt.Sprintf("映射 %d · 源表", mi+1), &m.Source.Table)
 					st.options = []string{"coils", "holding_registers"}
 					tt := strSpec(mb+".target.table", "目标表", &m.Target.Table)
-					tt.options = []string{"discrete_inputs", "input_registers"}
+					tt.options = []string{"input_registers"}
+					if m.Source.Table == "coils" {
+						tt.options = []string{"discrete_inputs"}
+					}
 					dn.specs = append(dn.specs, st, uintSpec(mb+".source.start_address", "源地址", &m.Source.StartAddress), uintSpec(mb+".source.count", "数量", &m.Source.Count), tt, uintSpec(mb+".target.start_address", "目标地址", &m.Target.StartAddress))
 				}
 			}
 			nodes = append(nodes, dn)
 		}
 	}
+	if e.ids == nil {
+		e.ids = map[string]string{}
+	}
+	for _, n := range nodes {
+		if e.ids[n.path] == "" {
+			e.nextID++
+			e.ids[n.path] = fmt.Sprintf("entity-%d", e.nextID)
+		}
+		n.id = e.ids[n.path]
+	}
 	e.nodes = nodes
+	e.nodesByID = map[string]*cfgNode{}
+	for _, n := range nodes {
+		e.nodesByID[n.id] = n
+	}
 	for _, n := range nodes {
 		for _, s := range n.specs {
 			if s.options != nil || s.readOnly {
 				continue
 			}
 			ed := e.eds[s.path]
+			wasNil := ed == nil
+			pendingName := ed != nil && n.kind == "模拟模型" && strings.HasSuffix(s.path, ".name") && ed.Text() != s.get()
 			if ed == nil {
 				ed = &widget.Editor{SingleLine: true}
 				e.eds[s.path] = ed
 			}
-			if ed.Text() != s.get() {
+			if ed.Text() != s.get() && !pendingName && (e.editBase == nil || wasNil) {
 				ed.SetText(s.get())
 			}
 		}
 	}
-	if e.node(e.sel) == nil {
+	if e.node(e.sel) == nil && !strings.HasPrefix(e.sel, "group:") {
 		e.sel = "global"
 	}
 	e.version++
@@ -362,41 +481,85 @@ func (e *configEditor) node(path string) *cfgNode {
 // commitBaseline makes the draft the saved state.
 func (e *configEditor) commitBaseline() {
 	e.baseline, e.baseNode = map[string]string{}, map[string]string{}
+	e.baseKinds, e.basePaths = map[string]string{}, map[string]string{}
 	for _, n := range e.nodes {
-		e.baseNode[n.path] = n.title()
+		e.baseNode[n.id], e.baseKinds[n.id], e.basePaths[n.id] = n.title(), n.kind, n.path
 		for _, s := range n.specs {
 			if s.visible() {
-				e.baseline[s.path] = s.get()
+				e.baseline[e.fieldKey(n, s)] = s.get()
 			}
 		}
 	}
+	e.undoState = nil
+	e.savedIDs = copyIDs(e.ids)
 }
-
+func (e *configEditor) fieldKey(n *cfgNode, s *spec) string {
+	return n.id + "." + strings.TrimPrefix(s.path, n.path+".")
+}
 func (e *configEditor) changes() []change {
 	var out []change
 	seen := map[string]bool{}
+	fields := map[string]bool{}
 	for _, n := range e.nodes {
+		seen[n.id] = true
+		if _, exists := e.baseNode[n.id]; !exists {
+			out = append(out, change{node: n, label: "新增" + n.kind, new: n.title()})
+			continue
+		}
 		for _, s := range n.specs {
 			if !s.visible() {
 				continue
 			}
-			seen[s.path] = true
-			old, ok := e.baseline[s.path]
+			fields[e.fieldKey(n, s)] = true
+			old, ok := e.baseline[e.fieldKey(n, s)]
 			if !ok || old != s.get() {
 				out = append(out, change{node: n, label: s.label, old: old, new: s.get()})
 			}
 		}
 	}
-	for path, old := range e.baseline {
-		if !seen[path] && e.node(path[:strings.LastIndexByte(path, '.')]) == nil {
-			out = append(out, change{label: path, old: old, removed: true})
+	byID := map[string]*cfgNode{}
+	for _, n := range e.nodes {
+		byID[n.id] = n
+	}
+	removedMappings := map[string]bool{}
+	for field := range e.baseline {
+		if fields[field] {
+			continue
+		}
+		id, _, ok := strings.Cut(field, ".simulation.mappings.")
+		if !ok || removedMappings[id] {
+			continue
+		}
+		if n := byID[id]; n != nil {
+			if d := e.downstream(n.path); d != nil && d.Type == "injector" {
+				out = append(out, change{node: n, label: "移除映射", old: "原映射集合", new: fmt.Sprintf("剩余 %d 条映射", len(d.Mappings))})
+				removedMappings[id] = true
+			}
+		}
+	}
+	for id, title := range e.baseNode {
+		if !seen[id] {
+			// A gateway removal already includes its children.
+			parent := strings.Split(e.basePaths[id], ".")
+			if len(parent) > 2 {
+				hidden := false
+				for pid, path := range e.basePaths {
+					if path == strings.Join(parent[:2], ".") && !seen[pid] {
+						hidden = true
+					}
+				}
+				if hidden {
+					continue
+				}
+			}
+			out = append(out, change{label: "删除" + e.baseKinds[id], old: title, removed: true})
 		}
 	}
 	return out
 }
 
 func (e *configEditor) isNew(n *cfgNode) bool {
-	_, ok := e.baseNode[n.path]
+	_, ok := e.baseNode[n.id]
 	return !ok
 }
 
@@ -412,7 +575,10 @@ func problemPath(p config.Problem) string {
 // whose path is the spec's.
 func (e *configEditor) fieldErr(s *spec) string {
 	if !s.visible() {
-		return ""
+		ed := e.eds[s.path]
+		if ed == nil || ed.Text() == s.get() {
+			return ""
+		}
 	}
 	if s.check != nil {
 		value := s.get()
@@ -467,43 +633,75 @@ func (e *configEditor) errorCount() int {
 	if e.raw && e.rawErr != "" {
 		return 1
 	}
-	n := len(e.problems)
-	for _, node := range e.nodes {
-		for _, s := range node.specs {
-			if s.check != nil && s.visible() && e.fieldErr(s) != "" {
-				n++
+	fields := map[string]bool{}
+	for _, p := range e.problems {
+		fields[problemPath(p)] = true
+	}
+	if !e.raw {
+		for _, node := range e.nodes {
+			for _, s := range node.specs {
+				if s.check != nil && e.fieldErr(s) != "" {
+					fields[s.path] = true
+				}
 			}
 		}
 	}
-	return n
+	return len(fields)
 }
 
 // ---- frame ----
 
 // unsaved reports edits not yet written to the file.
 func (e *configEditor) unsaved() bool {
-	return len(e.changes()) > 0 || e.raw && e.rawEd.Text() != e.savedYAML
+	return e.editBase != nil || len(e.draftChanges()) > 0 || e.pendingRename() || e.raw && e.rawEd.Text() != e.savedYAML
 }
 
 func (e *configEditor) Layout(gtx C) D {
 	th := e.th
-	e.update(gtx)
-	if e.checked != e.version {
-		e.problems, e.checked = e.draft.Problems(), e.version
+	if !e.inputBlocked {
+		e.update(gtx)
+		e.updateWorkbench(gtx)
 	}
-	changes := e.changes()
+	e.autosaveRecovery(gtx.Now)
+	if e.checked != e.version {
+		e.problems, e.checked = e.validationProblems(), e.version
+	}
+	changes := append([]change(nil), e.draftChanges()...)
+	if e.pendingRename() {
+		for _, n := range e.nodes {
+			if n.kind == "模拟模型" {
+				if ed := e.eds[n.path+".name"]; ed != nil && ed.Text() != n.title() {
+					changes = append(changes, change{node: n, label: "待应用改名", old: n.title(), new: ed.Text()})
+				}
+			}
+		}
+	}
 	if e.raw && e.rawEd.Text() != e.savedYAML && len(changes) == 0 {
 		changes = append(changes, change{label: "文件文本", old: e.savedYAML, new: e.rawEd.Text()})
 	}
 	errs := e.errorCount()
 	canSave := len(changes) > 0 && errs == 0
-	if e.save.Clicked(gtx) && canSave {
+	for i := range e.diffModes {
+		if e.diffModes[i].Clicked(gtx) {
+			e.diffRunning = i == 1
+		}
+	}
+	apply := e.saveApply.Clicked(gtx) && !e.inputBlocked
+	if apply && !e.unsaved() && (e.needsApply() || !e.isRunning()) && errs == 0 {
+		e.applyRequested = true
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	if (e.save.Clicked(gtx) || apply) && !e.inputBlocked && canSave && !e.isStarting() {
 		if err := e.doSave(); err != nil {
 			e.saveFailed, e.saveProblem = true, err.Error()
 			e.toast, e.toastAt = "保存失败，草稿和运行配置保留。", gtx.Now
 		} else {
 			e.saveFailed, e.saveProblem = false, ""
 			e.toast, e.toastAt = "已保存。重启网关后使用新配置。", gtx.Now
+			e.applyRequested = apply && (e.needsApply() || !e.isRunning())
+			if apply {
+				gtx.Execute(op.InvalidateCmd{})
+			}
 		}
 	}
 
@@ -521,13 +719,20 @@ func (e *configEditor) Layout(gtx C) D {
 					})
 				}),
 				layout.Rigid(func(gtx C) D { return e.toolbar(gtx, changes, errs, canSave) }),
+				layout.Rigid(func(gtx C) D {
+					if !e.showPath {
+						return D{}
+					}
+					return layout.Inset{Left: 16, Right: 16, Bottom: 6}.Layout(gtx, th.label(e.configPath, smallSize, colMuted).Layout)
+				}),
+				layout.Rigid(e.workbenchBar),
+				layout.Rigid(e.recoveryBanner),
 				layout.Rigid(func(gtx C) D { return hline(gtx, colHair) }),
 				layout.Rigid(func(gtx C) D {
 					if e.raw || len(e.problems) == 0 {
 						return D{}
 					}
-					gtx.Constraints.Max.Y = gtx.Dp(unit.Dp(min(len(e.problems)*56, 168)))
-					return e.issueList(gtx)
+					return e.issueSummary(gtx)
 				}),
 				layout.Rigid(func(gtx C) D {
 					if e.toast == "" || (gtx.Now.Sub(e.toastAt) > 6*time.Second && !e.saveFailed) {
@@ -576,31 +781,62 @@ func (e *configEditor) Layout(gtx C) D {
 }
 
 func (e *configEditor) doSave() error {
+	if err := e.finishEdits(); err != nil {
+		return err
+	}
 	text := e.visualYAML()
 	if e.raw {
 		text = e.rawEd.Text()
+	}
+	cfg, err := config.ParseDraft([]byte(text))
+	if err != nil {
+		return err
+	}
+	if ps := cfg.Problems(); len(ps) > 0 {
+		return fmt.Errorf("%s", ps[0].Message)
 	}
 	if e.saveFile == nil {
 		return fmt.Errorf("没有可写的配置文件，请通过 -config 指定现有文件")
 	}
 	if err := e.saveFile(text); err != nil {
+		if errors.As(err, &e.conflict) {
+			e.conflictView = "草稿"
+			e.conflictEditor.SetText(text)
+		}
 		return err
 	}
 	e.savedYAML = text
 	e.commitBaseline()
 	e.rawSynced = text
+	if e.clearDraft != nil {
+		if err := e.clearDraft(); err != nil {
+			e.structureErr = "配置已保存，但草稿清理失败：" + err.Error()
+		}
+	}
+	e.lastRecovery = text
 	return nil
 }
 
 func (e *configEditor) update(gtx C) {
 	if e.modes[0].Clicked(gtx) && e.raw && e.rawErr == "" && !e.visualLocked {
 		e.raw = false
+		e.version++
 	}
 	if e.modes[1].Clicked(gtx) && !e.raw {
-		e.raw = true
-		e.rawSynced = e.visualYAML()
-		e.rawEd.SetText(e.rawSynced)
-		e.rawErr = ""
+		if e.pendingRename() {
+			e.structureErr = "请先完成模型改名或撤销输入，再切换 YAML"
+		} else if err := e.finishEdits(); err != nil {
+			e.structureErr = err.Error()
+		} else {
+			e.raw = true
+			e.version++
+			e.rawSynced = e.visualYAML()
+			if !e.unsaved() {
+				e.rawSynced = e.savedYAML
+			}
+			e.rawEd.SetText(e.rawSynced)
+			e.rawErr = ""
+		}
 	}
 	if e.discardRaw.Clicked(gtx) {
 		e.rawSynced = e.visualYAML()
@@ -613,11 +849,28 @@ func (e *configEditor) update(gtx C) {
 	}
 	if e.revert.Clicked(gtx) {
 		if cfg, err := config.ParseDraft([]byte(e.savedYAML)); err == nil {
+			e.editBase = nil
+			e.history = nil
+			e.future = nil
 			e.draft = cfg
+			selectedID := e.ids[e.sel]
+			e.sel = "global"
+			for path, id := range e.savedIDs {
+				if id == selectedID {
+					e.sel = path
+					break
+				}
+			}
+			e.ids = copyIDs(e.savedIDs)
+			e.resetControls()
+			e.undoState = nil
 			e.rebuild()
 			e.rawSynced = e.savedYAML
 			e.rawEd.SetText(e.savedYAML)
 			e.rawErr = ""
+			if e.clearDraft != nil {
+				_ = e.clearDraft()
+			}
 		}
 	}
 
@@ -627,7 +880,8 @@ func (e *configEditor) update(gtx C) {
 			if !ok {
 				break
 			}
-			if _, ok := ev.(widget.ChangeEvent); ok {
+			if _, ok := ev.(widget.ChangeEvent); ok && e.rawEd.Text() != e.rawSynced {
+				e.beginEdit()
 				e.reparse()
 			}
 		}
@@ -636,25 +890,44 @@ func (e *configEditor) update(gtx C) {
 
 	for path, b := range e.treeBtn {
 		if b.Clicked(gtx) {
-			e.sel = path
+			e.navigate(path)
 		}
 	}
-	for gi, b := range e.addDs {
-		if b.Clicked(gtx) {
-			gw := &e.draft.Gateways[gi]
-			gw.Downstreams = append(gw.Downstreams, config.DownstreamConfig{Name: "新下游", Type: "tcp", Tcp: config.TcpConfig{Address: "192.168.1.10:502"}})
-			e.rebuild()
-			e.sel = fmt.Sprintf("gateways.%d.downstreams.%d", gi, len(gw.Downstreams)-1)
-		}
-	}
-	e.updateMappings(gtx)
 	for _, n := range e.nodes {
 		for _, s := range n.specs {
 			if s.options != nil {
 				for opt, b := range e.opts[s.path] {
 					if b.Clicked(gtx) && s.get() != opt {
+						if strings.HasSuffix(s.path, ".type") {
+							path := s.path
+							// Flush the active protocol's editors before hiding them. The next
+							// transaction records the protocol switch and preserves inactive YAML.
+							e.beginEdit()
+							if err := e.finishEdits(); err != nil {
+								e.structureErr = err.Error()
+								return
+							}
+							for _, node := range e.nodes {
+								for _, field := range node.specs {
+									if field.path == path {
+										s = field
+									}
+								}
+							}
+							e.beginEdit()
+							s.set(opt)
+							e.transportDefaults(path, opt)
+							e.rebuild()
+							return
+						}
+						e.beginEdit()
 						s.set(opt)
+						e.transportDefaults(s.path, opt)
 						e.alignMapping(s.path, opt)
+						if strings.HasSuffix(s.path, ".source.table") {
+							e.rebuild()
+							return
+						}
 						if strings.HasSuffix(s.path, ".type") {
 							e.rebuild()
 						}
@@ -663,12 +936,27 @@ func (e *configEditor) update(gtx C) {
 				}
 				continue
 			}
-			if ed := e.eds[s.path]; ed != nil && !s.readOnly && ed.Text() != s.get() {
+			if n.kind == "模拟模型" && strings.HasSuffix(s.path, ".name") {
+				if ed := e.eds[s.path]; ed != nil && ed.Text() != s.get() && e.inputText[s.path] != ed.Text() {
+					e.beginEdit()
+					e.inputText[s.path] = ed.Text()
+					e.version++
+				}
+				continue
+			}
+			if ed := e.eds[s.path]; ed != nil && !s.readOnly && ed.Text() != s.get() && e.inputText[s.path] != ed.Text() {
+				e.beginEdit()
 				s.set(ed.Text())
+				e.inputText[s.path] = ed.Text()
 				e.version++
 			}
 		}
 	}
+	if e.updateStructure(gtx) {
+		return
+	}
+	e.updateMappings(gtx)
+	e.finishUnfocusedField(gtx)
 }
 
 // reparse loads the raw text into the draft when it parses.
@@ -680,6 +968,13 @@ func (e *configEditor) reparse() {
 	}
 	e.rawErr = ""
 	e.draft = cfg
+	if saved, err := config.ParseDraft([]byte(e.savedYAML)); err == nil && reflect.DeepEqual(saved, cfg) {
+		e.ids = copyIDs(e.savedIDs)
+	} else {
+		e.reconcileRawIDs()
+	}
+	e.resetControls()
+	e.undoState = nil
 	e.rebuild()
 	e.rawSynced = e.rawEd.Text()
 	e.visualLocked = cfg.Version != 1
@@ -689,50 +984,95 @@ func (e *configEditor) toolbar(gtx C, changes []change, errs int, canSave bool) 
 	th := e.th
 	return layout.Inset{Left: 16, Right: 14}.Layout(gtx, func(gtx C) D {
 		children := []layout.FlexChild{
-			layout.Rigid(th.bold("配置", titleSize, colInk).Layout), gap(12),
-			layout.Rigid(func(gtx C) D { return th.chip(gtx, &e.modes[0], "可视化", !e.raw) }), gap(4),
-			layout.Rigid(func(gtx C) D { return th.chip(gtx, &e.modes[1], "config.yaml", e.raw) }), gap(12),
 			layout.Rigid(func(gtx C) D {
-				switch {
-				case errs > 0:
-					return th.badge(gtx, fmt.Sprintf("未保存 · %d 处问题", errs), colErr, colErrBg)
-				case len(changes) > 0:
-					return th.badge(gtx, fmt.Sprintf("已修改 %d 处 · 未保存", len(changes)), colWarn, colWarnBg)
+				name := filepath.Base(e.configPath)
+				if name == "." {
+					name = "配置文件"
 				}
-				if e.saveFailed {
-					return th.badge(gtx, "保存失败", colErr, colErrBg)
-				}
-				if e.savedYAML != e.runningYAML {
-					return th.badge(gtx, "已保存 · 待重启", colWarn, colWarnBg)
-				}
-				return th.badge(gtx, "运行配置", colOk, colOkBg)
+				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(280))
+				return e.wb.clicks.get("file-path").Layout(gtx, func(gtx C) D {
+					return layout.Inset{Left: 12, Top: 7, Bottom: 7, Right: 12}.Layout(gtx, func(gtx C) D { l := th.label(name, textSize, colAccent); l.MaxLines = 1; return l.Layout(gtx) })
+				})
+			}), gap(12),
+			layout.Rigid(func(gtx C) D {
+				labels := [2]string{"可视化", "YAML"}
+				return layout.Flex{}.Layout(gtx, th.segmented(2, func(i int) (*widget.Clickable, string, bool) { return &e.modes[i], labels[i], e.raw == (i == 1) })...)
+			}), gap(12),
+			layout.Rigid(func(gtx C) D {
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx C) D {
+						if e.saveFailed {
+							return th.badge(gtx, "保存失败", colErr, colErrBg)
+						}
+						if errs > 0 {
+							return th.badge(gtx, fmt.Sprintf("%d 处问题", errs), colErr, colErrBg)
+						}
+						if len(changes) > 0 || e.unsaved() {
+							return th.badge(gtx, "未保存", colWarn, colWarnBg)
+						}
+						return th.badge(gtx, "已保存", colMuted, colSoft)
+					}), gap(6),
+					layout.Rigid(func(gtx C) D {
+						if e.isStarting() {
+							return th.badge(gtx, "正在启动", colWarn, colWarnBg)
+						}
+						if !e.isRunning() {
+							return th.badge(gtx, "已停止", colMuted, colSoft)
+						}
+						if rt, ok := e.runtime.(interface{ ConnectionError() error }); ok && rt.ConnectionError() != nil {
+							return th.badge(gtx, "管理连接中断", colErr, colErrBg)
+						}
+						if rt, ok := e.runtime.(interface{ UsingRecovery() bool }); ok && rt.UsingRecovery() {
+							return th.badge(gtx, "恢复配置运行中", colWarn, colWarnBg)
+						}
+						if e.needsApply() {
+							return th.badge(gtx, "待应用", colWarn, colWarnBg)
+						}
+						return th.badge(gtx, "运行一致", colOk, colOkBg)
+					}))
 			}),
 			layout.Flexed(1, layout.Spacer{}.Layout),
 			layout.Rigid(func(gtx C) D {
-				if len(changes) == 0 {
+				if len(changes) == 0 && !e.pendingRename() {
 					return D{}
 				}
-				return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D { return th.button(gtx, &e.revert, "撤销全部", false) })
+				return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D { return th.button(gtx, &e.revert, "撤销全部", btnDefault) })
 			}),
 			layout.Rigid(func(gtx C) D {
 				txt := "查看变更"
 				if e.showDiff {
 					txt = "隐藏变更"
 				}
-				return th.button(gtx, &e.diff, txt, false)
+				return th.button(gtx, &e.diff, txt, btnDefault)
 			}),
 			gap(8),
 			layout.Rigid(func(gtx C) D {
 				if !canSave {
-					return disabled(gtx, func(gtx C) D { return th.button(gtx, &e.save, "保存", false) })
+					return disabled(gtx, func(gtx C) D { return th.button(gtx, &e.save, "仅保存", btnDefault) })
 				}
-				return th.button(gtx, &e.save, "保存", false)
+				return th.button(gtx, &e.save, "仅保存", btnDefault)
 			}),
 			gap(8),
-			layout.Rigid(th.label("重启网关后生效", smallSize, colMuted).Layout),
+			layout.Rigid(func(gtx C) D {
+				label := "保存并应用"
+				if !e.unsaved() {
+					label = "应用已保存配置"
+				}
+				if !e.isRunning() && !e.unsaved() {
+					label = "启动网关"
+				}
+				if e.isStarting() {
+					label = "正在应用…"
+				}
+				draw := func(gtx C) D { return th.button(gtx, &e.saveApply, label, btnPrimary) }
+				if e.isStarting() || errs > 0 || (!canSave && !e.needsApply() && e.isRunning()) {
+					return disabled(gtx, draw)
+				}
+				return draw(gtx)
+			}),
 		}
 		if gtx.Constraints.Max.X < gtx.Dp(1200) {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx C) D { return row(gtx, 40, children[:7]...) }), layout.Rigid(func(gtx C) D { return row(gtx, 40, children[7:]...) }))
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, layout.Rigid(func(gtx C) D { return row(gtx, 40, children[:5]...) }), layout.Rigid(func(gtx C) D { return row(gtx, 40, children[5:]...) }))
 		}
 		return row(gtx, 46, children...)
 	})
@@ -751,80 +1091,66 @@ func disabled(gtx C, w layout.Widget) D {
 
 func (e *configEditor) visualPane(gtx C) D {
 	return layout.Flex{}.Layout(gtx,
-		layout.Rigid(func(gtx C) D { return fixed(gtx, 260, e.treePane) }),
+		layout.Rigid(func(gtx C) D { return fixed(gtx, 260, e.workbenchTree) }),
 		layout.Rigid(func(gtx C) D { return vline(gtx, colHair) }),
-		layout.Flexed(1, e.formPane),
+		layout.Flexed(1, e.workbenchPane),
 	)
 }
 
-func (e *configEditor) treePane(gtx C) D {
-	th := e.th
-	var items []layout.Widget
-	last := ""
-	for i, n := range e.nodes {
-		section := map[string]string{"常规": "常规", "模拟模型": "模拟模型", "网关": "网关"}[n.kind]
-		if section != "" && section != last {
-			items = append(items, th.sectionTitle(section))
-			last = section
-		}
-		items = append(items, func(gtx C) D { return e.treeItem(gtx, n) })
-		if n.gw >= 0 && (i == len(e.nodes)-1 || e.nodes[i+1].gw != n.gw) {
-			gi := n.gw
-			items = append(items, func(gtx C) D {
-				return layout.Inset{Left: 30, Top: 2, Bottom: 6}.Layout(gtx, func(gtx C) D {
-					return th.button(gtx, e.addDs.get(gi), "+ 添加下游", false)
-				})
-			})
-		}
-	}
-	return material.List(th.Theme, &e.tree).Layout(gtx, len(items), func(gtx C, i int) D { return items[i](gtx) })
-}
-
 func (e *configEditor) treeItem(gtx C, n *cfgNode) D {
-	th := e.th
 	btn := e.treeBtn.get(n.path)
-	bg := colCanvas
-	fg := colBody
-	switch {
-	case n.path == e.sel:
-		bg, fg = colHover, colInk
-	case btn.Hovered():
+	bg, fg := colCanvas, colBody
+	if n.path == e.sel {
+		bg, fg = colSelected, colOnSelected
+	} else if btn.Hovered() {
 		bg = colSoft
 	}
-	dirty, bad := e.isNew(n), len(e.nodeProblems(n)) > 0
-	for _, s := range n.specs {
-		if !s.visible() {
-			continue
-		}
-		old, ok := e.baseline[s.path]
-		dirty = dirty || !ok || old != s.get()
-		bad = bad || e.fieldErr(s) != ""
+	depth := n.depth
+	if n.kind == "模拟模型" {
+		depth = 1
+	}
+	if n.kind == "上游" || n.kind == "下游" {
+		depth = 2
+	}
+	if n.kind == "网关" {
+		depth = 1
 	}
 	return layout.Inset{Left: 6, Right: 6}.Layout(gtx, func(gtx C) D {
-		return btn.Layout(gtx, func(gtx C) D {
-			gtx.Constraints.Min.X = gtx.Constraints.Max.X
-			return rounded(gtx, bg, 0, func(gtx C) D {
-				return layout.Inset{Left: 10 + unit.Dp(n.depth)*16, Right: 8}.Layout(gtx, func(gtx C) D {
-					return row(gtx, 28,
-						layout.Flexed(1, func(gtx C) D {
-							if n.kind == "网关" {
-								return th.bold(n.title(), textSize, fg).Layout(gtx)
-							}
-							return th.label(n.title(), textSize, fg).Layout(gtx)
-						}),
-						layout.Rigid(func(gtx C) D {
-							switch {
-							case bad:
-								return dot(gtx, colErrSolid)
-							case e.isNew(n):
-								return th.badge(gtx, "新增", colWarn, colWarnBg)
-							case dirty:
-								return dot(gtx, colWarnSolid)
-							}
-							return D{}
-						}),
-					)
-				})
+		return rounded(gtx, bg, 0, func(gtx C) D {
+			return layout.Inset{Left: unit.Dp(8 + depth*20), Right: 8}.Layout(gtx, func(gtx C) D {
+				return row(gtx, 32,
+					layout.Rigid(func(gtx C) D {
+						if n.kind == "网关" {
+							return e.treeDisclosure(gtx, "collapse-id|"+n.id, !e.wb.collapsed[n.id])
+						}
+						return fixed(gtx, 12, func(gtx C) D { return D{} })
+					}), gap(6),
+					layout.Flexed(1, func(gtx C) D {
+						return btn.Layout(gtx, func(gtx C) D {
+							return row(gtx, 32, layout.Rigid(func(gtx C) D { return configRoleIcon(gtx, n.kind, fg) }), gap(6),
+								layout.Flexed(1, func(gtx C) D {
+									title := n.title()
+									if n.kind == "常规" {
+										title = "全局运行设置"
+									}
+									l := e.th.label(title, textSize, fg)
+									l.MaxLines = 1
+									return l.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx C) D {
+									if len(e.nodeProblems(n)) > 0 {
+										return e.th.label("问题", smallSize, colErr).Layout(gtx)
+									}
+									if e.dirty(n) {
+										return e.th.label("修改", smallSize, colWarn).Layout(gtx)
+									}
+									if e.pendingIDs()[n.id] {
+										return e.th.label("待用", smallSize, colAccent).Layout(gtx)
+									}
+									return D{}
+								}))
+						})
+					}))
 			})
 		})
 	})
@@ -843,19 +1169,28 @@ func (e *configEditor) formPane(gtx C) D {
 	})
 
 	for _, s := range n.specs {
-		if s.visible() && !strings.Contains(s.path, ".simulation.mappings.") {
+		if s.visible() && (!s.advanced || e.wb.advanced[n.id]) && !strings.Contains(s.path, ".simulation.mappings.") {
 			items = append(items, func(gtx C) D { return e.fieldRow(gtx, n, s) })
 		}
 	}
+	items = append(items, func(gtx C) D { return e.objectExplanation(gtx, n) })
+	items = append(items, func(gtx C) D { return e.relationsPane(gtx, n) })
 	items = append(items, func(gtx C) D { return e.mappingGrid(gtx, n) })
 	items = append(items, func(gtx C) D { return e.mappingActions(gtx, n) })
-	return material.List(th.Theme, &e.form).Layout(gtx, len(items), func(gtx C, i int) D { return items[i](gtx) })
+	if e.deletePath == "" {
+		items = append(items, func(gtx C) D { return e.structureActions(gtx, n) })
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx C) D { return e.editActions(gtx, n) }),
+		layout.Flexed(1, func(gtx C) D {
+			return material.List(th.Theme, &e.form).Layout(gtx, len(items), func(gtx C, i int) D { return items[i](gtx) })
+		}))
 }
 
 func (e *configEditor) fieldRow(gtx C, n *cfgNode, s *spec) D {
 	th := e.th
 	msg := e.fieldErr(s)
-	old, had := e.baseline[s.path]
+	old, had := e.baseline[e.fieldKey(n, s)]
 	dirty := !had || old != s.get()
 	return layout.Inset{Left: 24, Right: 24, Bottom: 12}.Layout(gtx, func(gtx C) D {
 		return layout.Flex{}.Layout(gtx,
@@ -877,6 +1212,8 @@ func (e *configEditor) fieldRow(gtx C, n *cfgNode, s *spec) D {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx C) D {
 						switch {
+						case strings.HasSuffix(s.path, ".simulation.ref"):
+							return e.modelSelector(gtx, s)
 						case s.readOnly:
 							return layout.Inset{Top: 6}.Layout(gtx, th.label(s.get(), textSize, colBody).Layout)
 						case s.options != nil:
@@ -888,7 +1225,7 @@ func (e *configEditor) fieldRow(gtx C, n *cfgNode, s *spec) D {
 							return e.optionChips(gtx, s, btns)
 						}
 						ed := e.eds[s.path]
-						border := colHair
+						border := colControl
 						if msg != "" {
 							border = colErrSolid
 						} else if gtx.Focused(ed) {
@@ -901,7 +1238,7 @@ func (e *configEditor) fieldRow(gtx C, n *cfgNode, s *spec) D {
 						}
 						return outlined(gtx, border, fieldBg, radiusSm, func(gtx C) D {
 							gtx.Constraints.Min.X = gtx.Constraints.Max.X
-							return layout.Inset{Left: 9, Right: 9, Top: 6, Bottom: 6}.Layout(gtx, func(gtx C) D {
+							return layout.Inset{Left: 9, Right: 9, Top: 3, Bottom: 3}.Layout(gtx, func(gtx C) D {
 								st := material.Editor(th.Theme, ed, "")
 								st.TextSize = textSize
 								st.LineHeight = uiLineHeight(textSize)
@@ -909,6 +1246,16 @@ func (e *configEditor) fieldRow(gtx C, n *cfgNode, s *spec) D {
 								return st.Layout(gtx)
 							})
 						})
+					}),
+					layout.Rigid(func(gtx C) D {
+						if !strings.HasSuffix(s.path, ".baud_rate") {
+							return D{}
+						}
+						buttons := []layout.FlexChild{}
+						for _, value := range []string{"9600", "19200", "38400", "115200"} {
+							buttons = append(buttons, layout.Rigid(func(gtx C) D { return e.wbButton(gtx, "baud|"+s.path+"|"+value, value, btnLink) }), gap(4))
+						}
+						return row(gtx, 30, buttons...)
 					}),
 					layout.Rigid(func(gtx C) D {
 						switch {
@@ -939,58 +1286,18 @@ func orDash(s string) string {
 // ---- raw mode ----
 
 func (e *configEditor) rawPane(gtx C) D {
-	th := e.th
-	lines := strings.Count(e.rawEd.Text(), "\n") + 1
-	const lineHeight unit.Sp = 19
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
-			return background(gtx, colSoft, func(gtx C) D {
-				gtx.Constraints.Min.X = gtx.Constraints.Max.X
-				return layout.Inset{Left: 16, Right: 16, Top: 6, Bottom: 6}.Layout(gtx, th.label(
-					"保存将原样写入，保留注释与格式。",
-					smallSize, colMuted).Layout)
-			})
+			return layout.Inset{Left: 16, Top: 6, Bottom: 6}.Layout(gtx, e.th.label("保存将原样写入，保留注释与格式。", smallSize, colMuted).Layout)
 		}),
 		layout.Flexed(1, func(gtx C) D {
-			return material.List(th.Theme, &e.rawList).Layout(gtx, 1, func(gtx C, _ int) D {
-				return layout.Inset{Top: 8, Bottom: 8}.Layout(gtx, func(gtx C) D {
-					return layout.Flex{}.Layout(gtx,
-						layout.Rigid(func(gtx C) D {
-							return fixed(gtx, 52, func(gtx C) D {
-								children := make([]layout.FlexChild, lines)
-								for i := range children {
-									children[i] = layout.Rigid(func(gtx C) D {
-										// one gutter row per editor line, at the editor's line advance
-										h := gtx.Sp(lineHeight)
-										gtx.Constraints.Min.Y, gtx.Constraints.Max.Y = h, h
-										l := th.mono(fmt.Sprint(i+1), colMuted)
-										l.Alignment = text.End
-										gtx.Constraints.Min.X = gtx.Constraints.Max.X - gtx.Dp(12)
-										d := l.Layout(gtx)
-										d.Size.Y = h
-										return d
-									})
-								}
-								return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
-							})
-						}),
-						gap(12),
-						layout.Flexed(1, func(gtx C) D {
-							st := material.Editor(th.Theme, &e.rawEd, "")
-							st.Font = monoFont
-							st.TextSize = monoSize
-							st.LineHeight = lineHeight
-							st.LineHeightScale = 1
-							st.Color = colInk
-							return st.Layout(gtx)
-						}),
-					)
-				})
+			return layout.UniformInset(16).Layout(gtx, func(gtx C) D {
+				gtx.Constraints.Min = gtx.Constraints.Max
+				st := material.Editor(e.th.Theme, &e.rawEd, "")
+				st.Font, st.TextSize, st.LineHeight, st.LineHeightScale, st.Color = monoFont, monoSize, 19, 1, colInk
+				return st.Layout(gtx)
 			})
-		}),
-		layout.Rigid(func(gtx C) D { return hline(gtx, colHair) }),
-		layout.Rigid(e.rawProblems),
-	)
+		}), layout.Rigid(e.rawProblems))
 }
 
 func (e *configEditor) rawProblems(gtx C) D {
@@ -1001,29 +1308,20 @@ func (e *configEditor) rawProblems(gtx C) D {
 		children = append(children,
 			layout.Rigid(func(gtx C) D {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx C) D { return th.chip(gtx, e.issueBtn.get("$parse"), "定位解析错误", false) }), gap(8),
+					layout.Rigid(func(gtx C) D { return th.button(gtx, e.issueBtn.get("$parse"), "定位解析错误", btnLink) }), gap(8),
 					layout.Flexed(1, func(gtx C) D {
 						_, description := e.parseDiagnostic()
 						l := th.label(description, smallSize, colErr)
 						l.MaxLines = 3
 						return l.Layout(gtx)
 					}),
-					layout.Rigid(func(gtx C) D { return th.button(gtx, &e.discardRaw, "放弃文本修改", false) }))
+					layout.Rigid(func(gtx C) D { return th.button(gtx, &e.discardRaw, "放弃文本修改", btnDefault) }))
 			}),
 			layout.Rigid(th.label("修正前不能保存，也不能切回可视化；表单保留最后一次能解析的内容。", smallSize, colMuted).Layout))
 	case e.visualLocked:
 		children = append(children, layout.Rigid(th.label("v0 配置保留原文编辑；可视化仅支持 v1，不自动升级。", smallSize, colWarn).Layout))
 	case len(e.problems) > 0:
-		children = append(children, layout.Rigid(th.bold(fmt.Sprintf("%d 处问题", len(e.problems)), textSize, colErr).Layout))
-		for _, p := range e.problems {
-			children = append(children, layout.Rigid(func(gtx C) D {
-				return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
-					layout.Rigid(func(gtx C) D {
-						return th.chip(gtx, e.issueBtn.get(problemPath(p)), "定位 · "+e.deepest(problemPath(p)).title(), false)
-					}),
-					layout.Flexed(1, th.label(e.humanProblem(p), smallSize, colErr).Layout))
-			}))
-		}
+		children = append(children, layout.Rigid(e.issueSummary))
 	default:
 		children = append(children, layout.Rigid(th.label("✓ 校验通过", textSize, colOk).Layout))
 	}
@@ -1038,14 +1336,22 @@ func (e *configEditor) diffPane(gtx C, changes []change) D {
 	th := e.th
 	var items []layout.Widget
 	title := "待保存的变更"
-	if len(changes) == 0 && e.savedYAML != e.runningYAML {
+	items = append(items, func(gtx C) D {
+		return layout.Flex{}.Layout(gtx, th.segmented(2, func(i int) (*widget.Clickable, string, bool) {
+			return &e.diffModes[i], []string{"未保存", "待应用"}[i], e.diffRunning == (i == 1)
+		})...)
+	})
+	if e.diffRunning {
 		changes = e.pendingChanges()
 		title = "待应用的变更"
+		if !e.needsApply() {
+			items = append(items, th.label("仅文本变化或语义一致，无需运行变更。", smallSize, colMuted).Layout)
+		}
 	}
 	items = append(items, th.sectionTitle(fmt.Sprintf("%s · %d", title, len(changes))))
 	if len(changes) == 0 {
 		items = append(items, func(gtx C) D {
-			return layout.Inset{Left: 14}.Layout(gtx, th.label("没有未保存的修改", smallSize, colMuted).Layout)
+			return layout.Inset{Left: 14}.Layout(gtx, th.label("此比较没有变更", smallSize, colMuted).Layout)
 		})
 	}
 	for _, c := range changes {
@@ -1059,7 +1365,12 @@ func (e *configEditor) diffPane(gtx C, changes []change) D {
 			}
 			return layout.Inset{Left: 14, Right: 14, Bottom: 8}.Layout(gtx, func(gtx C) D {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(th.label(title, smallSize, colMuted).Layout),
+					layout.Rigid(func(gtx C) D {
+						if c.node != nil {
+							return e.wbButton(gtx, "open|"+c.node.path, title, btnLink)
+						}
+						return th.label(title, smallSize, colMuted).Layout(gtx)
+					}),
 					layout.Rigid(func(gtx C) D {
 						if c.old == "" && !c.removed {
 							return D{}
@@ -1077,7 +1388,7 @@ func (e *configEditor) diffPane(gtx C, changes []change) D {
 		})
 	}
 	items = append(items, func(gtx C) D {
-		return layout.Inset{Left: 14, Right: 14, Top: 6}.Layout(gtx, th.label("需要重启："+e.affected(changes), smallSize, colBody).Layout)
+		return layout.Inset{Left: 14, Right: 14, Top: 6}.Layout(gtx, th.label("变更涉及："+e.affected(changes), smallSize, colBody).Layout)
 	})
 	return material.List(th.Theme, &e.side).Layout(gtx, len(items), func(gtx C, i int) D { return items[i](gtx) })
 }
@@ -1085,6 +1396,12 @@ func (e *configEditor) diffPane(gtx C, changes []change) D {
 // affected names the gateways a change set restarts; global, simulation
 // and structural changes restart them all.
 func (e *configEditor) affected(changes []change) string {
+	cfg := e.draft
+	if e.diffRunning {
+		if saved, err := config.ParseDraft([]byte(e.savedYAML)); err == nil {
+			cfg = saved
+		}
+	}
 	seen := map[string]bool{}
 	add := func(name string) { seen[name] = true }
 	for _, c := range changes {
@@ -1092,11 +1409,11 @@ func (e *configEditor) affected(changes []change) string {
 			return "全部网关"
 		}
 		if c.node.gw >= 0 {
-			add(e.draft.Gateways[c.node.gw].Name)
+			add(cfg.Gateways[c.node.gw].Name)
 			continue
 		}
 		// A shared model change affects every gateway that references that model.
-		for _, g := range e.draft.Gateways {
+		for _, g := range cfg.Gateways {
 			for _, d := range g.Downstreams {
 				if d.SimulationRef == c.node.title() || (c.label == "名称" && d.SimulationRef == c.old) {
 					add(g.Name)
@@ -1105,13 +1422,116 @@ func (e *configEditor) affected(changes []change) string {
 		}
 	}
 	var names []string
-	for _, g := range e.draft.Gateways {
+	for _, g := range cfg.Gateways {
 		if seen[g.Name] {
 			names = append(names, g.Name)
 		}
 	}
 	if len(names) == 0 {
-		return "无网关受影响"
+		return "配置无网关引用；应用配置仍将重启全部链路"
 	}
-	return strings.Join(names, "、")
+	return strings.Join(names, "、") + "（应用配置将重启全部链路）"
+}
+
+func (e *configEditor) isStarting() bool {
+	return e.runtime != nil && e.runtime.State().Phase == live.Starting
+}
+func (e *configEditor) isRunning() bool {
+	if e.runtime != nil {
+		return e.runtime.State().Phase == live.Running
+	}
+	return e.running
+}
+func (e *configEditor) needsApply() bool {
+	if e.semanticValid && e.semanticSaved == e.savedYAML && e.semanticRunning == e.runningYAML {
+		return e.semanticPending
+	}
+	e.semanticSaved, e.semanticRunning, e.semanticValid = e.savedYAML, e.runningYAML, true
+	a, err := config.ParseDraft([]byte(e.savedYAML))
+	if err != nil {
+		e.semanticPending = false
+		return false
+	}
+	b, err := config.ParseDraft([]byte(e.runningYAML))
+	e.semanticPending = err != nil || !reflect.DeepEqual(a, b)
+	return e.semanticPending
+}
+
+// Core validity remains authoritative for YAML. New visual objects additionally
+// need usable links; existing CLI-supported empty gateways remain editable.
+func (e *configEditor) validationProblems() []config.Problem {
+	if e.raw {
+		return e.draft.Problems()
+	}
+	ps := editorProblems(e.draft)
+	out := ps[:0]
+	for _, p := range ps {
+		if strings.Contains(p.Message, "至少需要") {
+			n := e.deepest(problemPath(p))
+			if n != nil && !e.isNew(n) {
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	paths := map[string]bool{}
+	for _, p := range out {
+		paths[problemPath(p)] = true
+	}
+	for _, n := range e.nodes {
+		for _, s := range n.specs {
+			if s.check == nil || paths[s.path] {
+				continue
+			}
+			ed := e.eds[s.path]
+			if !s.visible() && (ed == nil || ed.Text() == s.get()) {
+				continue
+			}
+			value := s.get()
+			if ed != nil {
+				value = ed.Text()
+			}
+			if msg := s.check(value); msg != "" {
+				parts := strings.Split(s.path, ".")
+				path := make([]any, len(parts))
+				for i, p := range parts {
+					if index, err := strconv.Atoi(p); err == nil {
+						path[i] = index
+					} else {
+						path[i] = p
+					}
+				}
+				out = append(out, config.Problem{Path: path, Message: msg})
+				paths[s.path] = true
+			}
+		}
+	}
+	return out
+}
+
+func (e *configEditor) draftChanges() []change {
+	if !e.changesCacheValid || e.changesCacheVersion != e.version || e.changesCacheSaved != e.savedYAML {
+		e.changesCache = e.changes()
+		e.changesCacheVersion = e.version
+		e.changesCacheSaved = e.savedYAML
+		e.changesCacheValid = true
+	}
+	return e.changesCache
+}
+
+func (e *configEditor) finishUnfocusedField(gtx C) {
+	previous := e.focusedField
+	e.focusedField = ""
+	for path, ed := range e.eds {
+		if gtx.Focused(ed) {
+			e.focusedField = path
+			break
+		}
+	}
+	if previous == "" || previous == e.focusedField || e.editBase == nil || e.pendingRename() || strings.Contains(previous, ".simulation.") {
+		return
+	}
+	if err := e.finishEdits(); err != nil {
+		e.structureErr = err.Error()
+	}
 }

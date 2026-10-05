@@ -12,6 +12,7 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
 )
@@ -40,13 +41,13 @@ func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []*Exchange
 					layout.Rigid(th.bold("请求", textSize, colInk).Layout), gap(8),
 					layout.Rigid(th.label(fmt.Sprintf("%d / %d", len(xs), total), smallSize, colMuted).Layout),
 					layout.Flexed(1, layout.Spacer{}.Layout),
-					layout.Rigid(func(gtx C) D { return th.chip(gtx, &v.errorsOnly, "仅异常", v.onlyErrors) }), gap(4),
+					layout.Rigid(func(gtx C) D { return th.checkbox(gtx, &v.errorsOnly, "仅异常", v.onlyErrors) }), gap(12),
 					layout.Rigid(func(gtx C) D {
 						txt := "暂停跟随"
 						if v.paused || v.sel != 0 {
 							txt = "恢复实时"
 						}
-						return th.button(gtx, &v.pause, txt, false)
+						return th.button(gtx, &v.pause, txt, btnDefault)
 					}),
 				)
 			})
@@ -66,7 +67,7 @@ func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []*Exchange
 				if v.onlyErrors {
 					scope += " · 仅异常"
 				}
-				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, th.label(strings.Trim(scope, " ·"), smallSize, colMuted).Layout), gap(4), layout.Rigid(func(gtx C) D { return th.button(gtx, &v.clearFilters, "清除筛选", false) }))
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx, layout.Flexed(1, th.label(strings.Trim(scope, " ·"), smallSize, colMuted).Layout), gap(4), layout.Rigid(func(gtx C) D { return th.button(gtx, &v.clearFilters, "清除筛选", btnDefault) }))
 			})
 		}),
 		layout.Rigid(func(gtx C) D {
@@ -163,10 +164,12 @@ func (v *linkedView) registerPane(gtx C, l Link, reads, writes *[tableSize]int) 
 						layout.Rigid(th.label("Slave ID", smallSize, colMuted).Layout), gap(8),
 						layout.Flexed(1, func(gtx C) D {
 							ids := l.Ds.IDs()
-							return material.List(th.Theme, &v.slaveList).Layout(gtx, len(ids), func(gtx C, i int) D {
+							slaves := material.List(th.Theme, &v.slaveList)
+							slaves.AnchorStrategy = material.Overlay
+							return slaves.Layout(gtx, len(ids), func(gtx C, i int) D {
 								id := int(ids[i])
-								return layout.Inset{Right: 4}.Layout(gtx, func(gtx C) D {
-									return fixedH(gtx, 32, func(gtx C) D { return th.chip(gtx, v.slaves.get(id), fmt.Sprint(id), v.slave == id) })
+								return fixedH(gtx, 32, func(gtx C) D {
+									return th.segment(gtx, v.slaves.get(id), fmt.Sprint(id), v.slave == id, i == 0, i == len(ids)-1)
 								})
 							})
 						}),
@@ -176,14 +179,9 @@ func (v *linkedView) registerPane(gtx C, l Link, reads, writes *[tableSize]int) 
 		}),
 		layout.Rigid(func(gtx C) D {
 			return layout.Inset{Left: 14, Right: 10}.Layout(gtx, func(gtx C) D {
-				children := []layout.FlexChild{}
-				for i := range v.tables {
-					i := i
-					children = append(children, layout.Rigid(func(gtx C) D {
-						return th.chip(gtx, &v.tables[i], strings.Fields(tableNames[i])[0], v.table == table(i))
-					}), gap(3))
-				}
-				return row(gtx, 32, children...)
+				return row(gtx, 32, th.segmented(len(v.tables), func(i int) (*widget.Clickable, string, bool) {
+					return &v.tables[i], strings.Fields(tableNames[i])[0], v.table == table(i)
+				})...)
 			})
 		}),
 		layout.Rigid(func(gtx C) D {
@@ -313,8 +311,8 @@ func (v *linkedView) packetPane(gtx C, x *Exchange) D {
 			if v.packets[x.Seq] {
 				txt = "收起已采集报文"
 			}
-			return th.button(gtx, toggle, txt, false)
-		}), gap(8), layout.Rigid(func(gtx C) D { return th.button(gtx, copy, "复制已采集报文", false) }))
+			return th.button(gtx, toggle, txt, btnDefault)
+		}), gap(8), layout.Rigid(func(gtx C) D { return th.button(gtx, copy, "复制已采集报文", btnDefault) }))
 	})}
 	if v.packets[x.Seq] {
 		for _, p := range []struct {

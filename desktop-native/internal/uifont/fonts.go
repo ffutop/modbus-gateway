@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	UI   font.Typeface = "Go, Noto Sans SC"
+	UI   font.Typeface = "Noto Sans SC"
 	Mono font.Typeface = "Go Mono, Noto Sans SC"
 )
 

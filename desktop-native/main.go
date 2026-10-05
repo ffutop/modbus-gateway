@@ -72,8 +72,43 @@ func main() {
 		path = *configFile
 	}
 	sup := sidecar.NewSupervisor(exe, path, w.Invalidate)
+	recovery := configfile.NewRecovery(path, first.Content)
 	sup.Output().Echo = os.Stderr // the gateway's log joins the app's
 	build := func(info workspace.Info) *workspace.UI {
+		info.RunningContent = sup.RunningConfig()
+		if sup.State().Phase == live.Running && info.RunningContent != "" {
+			info.StartErr = nil
+		}
+		recovery.Rebase(info.Content)
+		info.Draft, info.DraftConflict, _ = recovery.Load()
+		info.DraftBase = recovery.Baseline()
+		info.SaveDraft = recovery.Queue
+		info.DraftError = recovery.Err
+		savedContent := info.Content
+		saved := info.Save
+		info.Save = func(text string) error {
+			if saved == nil {
+				return fmt.Errorf("配置文件不可写")
+			}
+			if err := saved(text); err != nil {
+				return err
+			}
+			savedContent = text
+			_ = recovery.Clear(text)
+			return nil
+		}
+		rebase := info.Rebase
+		if rebase != nil {
+			info.Rebase = func(text string) error {
+				if err := rebase(text); err != nil {
+					return err
+				}
+				savedContent = text
+				recovery.Rebase(text)
+				return nil
+			}
+		}
+		info.ClearDraft = func() error { return recovery.Clear(savedContent) }
 		if launchErr != nil {
 			info.StartErr = launchErr
 		}
@@ -83,7 +118,7 @@ func main() {
 		if info.StartErr != nil {
 			slog.Error("Gateway not running", "err", info.StartErr)
 		}
-		info.Running = info.StartErr == nil
+		info.Running = info.StartErr == nil && sup.State().Phase == live.Running
 		info.Source, info.Runtime = sup, sup
 		return workspace.New(info)
 	}
@@ -121,7 +156,7 @@ func load(configFile string) workspace.Info {
 	if path != "" {
 		file, readErr := configfile.Open(path)
 		if readErr == nil {
-			info.Content, info.Save = file.Content, file.Save
+			info.Content, info.Save, info.Rebase = file.Content, file.Save, file.Rebase
 			var parseErr error
 			info.Config, parseErr = config.ParseDraft([]byte(file.Content))
 			if err == nil && parseErr != nil {
@@ -160,7 +195,9 @@ func run(w *app.Window, sup *sidecar.Supervisor, u *workspace.UI, build func() *
 		case app.FrameEvent:
 			if st := sup.State(); st.Epoch != epoch {
 				epoch = st.Epoch
-				u = build()
+				next := build()
+				u.CarryDraftTo(next)
+				u = next
 			}
 			gtx := app.NewContext(&ops, e)
 			u.Layout(gtx)

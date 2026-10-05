@@ -42,7 +42,7 @@ func NewTheme() *Theme {
 	th := material.NewTheme()
 	th.Shaper = uifont.NewShaper()
 	th.Face = uifont.UI
-	th.Palette = material.Palette{Bg: colCanvas, Fg: colBody, ContrastBg: colInk, ContrastFg: colCanvas}
+	th.Palette = material.Palette{Bg: colCanvas, Fg: colBody, ContrastBg: colPrimary, ContrastFg: colOnPrimary}
 	th.TextSize = textSize
 	return &Theme{th}
 }
@@ -203,33 +203,133 @@ func dot(gtx C, col color.NRGBA) D {
 	return D{Size: image.Pt(s, s), Baseline: 0}
 }
 
-// button is an outlined button; primary fills it with ink.
-func (th *Theme) button(gtx C, btn *widget.Clickable, txt string, primary bool) D {
-	bg, fg, border := colCanvas, colInk, colHair
-	if primary {
-		bg, fg, border = colInk, colCanvas, colInk
-	} else if btn.Hovered() {
-		bg = colSoft
+// btnKind ranks a button: one primary action per area, destructive actions
+// apart, links for navigation.
+type btnKind uint8
+
+const (
+	btnDefault btnKind = iota
+	btnPrimary
+	btnDanger
+	btnLink
+)
+
+// button is a compact desktop push button.
+func (th *Theme) button(gtx C, btn *widget.Clickable, txt string, kind btnKind) D {
+	bg, fg, border := colCanvas, colInk, colControl
+	switch kind {
+	case btnPrimary:
+		bg, fg, border = colPrimary, colOnPrimary, colPrimary
+		if btn.Hovered() {
+			bg, border = colPrimaryHover, colPrimaryHover
+		}
+	case btnDanger:
+		fg, border = colErr, colDangerLine
+		if btn.Hovered() {
+			bg = colErrTint
+		}
+	case btnLink:
+		fg, border = colPrimary, colCanvas
+		if btn.Hovered() {
+			bg, border = colSoft, colSoft
+		}
+	default:
+		if btn.Hovered() {
+			bg = colSoft
+		}
 	}
 	return btn.Layout(gtx, func(gtx C) D {
+		gtx.Constraints.Min.X = 0
 		return outlined(gtx, border, bg, radiusSm, func(gtx C) D {
-			return layout.Inset{Left: 10, Right: 10, Top: 4, Bottom: 4}.Layout(gtx, th.bold(txt, textSize, fg).Layout)
+			return layout.Inset{Left: 11, Right: 11, Top: 3, Bottom: 3}.Layout(gtx, th.label(txt, textSize, fg).Layout)
 		})
 	})
 }
 
-// chip is a compact desktop toggle with a persistent control outline.
-func (th *Theme) chip(gtx C, btn *widget.Clickable, txt string, on bool) D {
-	bg, fg := colCard, colMuted
-	if on {
-		bg, fg = colInk, colCanvas
-	} else if btn.Hovered() {
-		bg = colHover
+// segment is one option of a segmented control; adjacent segments share a
+// border, so only the first draws its left edge and only the ends are rounded.
+func (th *Theme) segment(gtx C, btn *widget.Clickable, txt string, on, first, last bool) D {
+	bg, fg := colCanvas, colBody
+	switch {
+	case on:
+		bg, fg = colSelected, colOnSelected
+	case btn.Hovered():
+		bg = colSoft
+	}
+	r := gtx.Dp(radiusSm)
+	corners := func(rect image.Rectangle, r int) clip.RRect {
+		rr := clip.RRect{Rect: rect}
+		if first {
+			rr.NW, rr.SW = r, r
+		}
+		if last {
+			rr.NE, rr.SE = r, r
+		}
+		return rr
 	}
 	return btn.Layout(gtx, func(gtx C) D {
-		return rounded(gtx, bg, radiusPill, func(gtx C) D {
-			return layout.Inset{Left: 10, Right: 10, Top: 3, Bottom: 3}.Layout(gtx, th.label(txt, smallSize, fg).Layout)
+		gtx.Constraints.Min.X = 0
+		return layout.Background{}.Layout(gtx, func(gtx C) D {
+			size := gtx.Constraints.Min
+			paint.FillShape(gtx.Ops, colControl, corners(image.Rectangle{Max: size}, r).Op(gtx.Ops))
+			left := 0
+			if first {
+				left = 1
+			}
+			paint.FillShape(gtx.Ops, bg, corners(image.Rect(left, 1, size.X-1, size.Y-1), max(0, r-1)).Op(gtx.Ops))
+			return D{Size: size}
+		}, func(gtx C) D {
+			left := unit.Dp(10)
+			if first {
+				left = 11
+			}
+			return layout.Inset{Left: left, Right: 11, Top: 4, Bottom: 4}.Layout(gtx, th.label(txt, textSize, fg).Layout)
 		})
+	})
+}
+
+// segmented lays out n mutually exclusive options as one control.
+func (th *Theme) segmented(n int, item func(i int) (*widget.Clickable, string, bool)) []layout.FlexChild {
+	children := make([]layout.FlexChild, 0, n)
+	for i := 0; i < n; i++ {
+		i := i
+		children = append(children, layout.Rigid(func(gtx C) D {
+			btn, txt, on := item(i)
+			return th.segment(gtx, btn, txt, on, i == 0, i == n-1)
+		}))
+	}
+	return children
+}
+
+// checkbox is a labelled boolean toggle.
+func (th *Theme) checkbox(gtx C, btn *widget.Clickable, txt string, on bool) D {
+	return btn.Layout(gtx, func(gtx C) D {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				s := gtx.Dp(14)
+				box := image.Rectangle{Max: image.Pt(s, s)}
+				r := gtx.Dp(radiusXs)
+				if on {
+					paint.FillShape(gtx.Ops, colPrimary, clip.UniformRRect(box, r).Op(gtx.Ops))
+					var p clip.Path
+					p.Begin(gtx.Ops)
+					p.MoveTo(f32.Pt(float32(s)*0.24, float32(s)*0.52))
+					p.LineTo(f32.Pt(float32(s)*0.43, float32(s)*0.70))
+					p.LineTo(f32.Pt(float32(s)*0.77, float32(s)*0.32))
+					paint.FillShape(gtx.Ops, colOnPrimary, clip.Stroke{Path: p.End(), Width: float32(gtx.Dp(2))}.Op())
+				} else {
+					border := colControl
+					if btn.Hovered() {
+						border = colLineStrong
+					}
+					paint.FillShape(gtx.Ops, border, clip.UniformRRect(box, r).Op(gtx.Ops))
+					paint.FillShape(gtx.Ops, colCanvas, clip.UniformRRect(box.Inset(1), max(0, r-1)).Op(gtx.Ops))
+				}
+				return D{Size: box.Max}
+			}),
+			gap(6),
+			layout.Rigid(th.label(txt, textSize, colInk).Layout),
+		)
 	})
 }
 
@@ -240,18 +340,16 @@ func (th *Theme) tab(gtx C, btn *widget.Clickable, txt string, on bool) D {
 		fg = colInk
 	}
 	return btn.Layout(gtx, func(gtx C) D {
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-			layout.Rigid(func(gtx C) D {
-				return layout.Inset{Left: 12, Right: 12, Top: 6, Bottom: 6}.Layout(gtx, th.bold(txt, textSize, fg).Layout)
-			}),
-			layout.Rigid(func(gtx C) D {
-				if !on {
-					return layout.Spacer{Height: 2}.Layout(gtx)
-				}
-				gtx.Constraints.Min = image.Pt(gtx.Constraints.Min.X, gtx.Dp(2))
-				return fill(gtx, colInk)
-			}),
-		)
+		d := layout.Inset{Left: 12, Right: 12, Top: 6, Bottom: 6}.Layout(gtx, th.label(txt, textSize, fg).Layout)
+		h := gtx.Dp(2)
+		if on {
+			r := clip.Rect{Min: image.Pt(0, d.Size.Y), Max: image.Pt(d.Size.X, d.Size.Y+h)}.Push(gtx.Ops)
+			paint.Fill(gtx.Ops, colPrimary)
+			r.Pop()
+		}
+		d.Size.Y += h
+		d.Baseline += h
+		return d
 	})
 }
 
