@@ -56,7 +56,7 @@ YAML 模式隐藏对象树，文本区填满剩余高度并内部滚动。树使
 - **Linux**：需要 CGO，以及 X11/Wayland、EGL/Vulkan、xkbcommon 的开发包（参见 [Gio 安装说明](https://gioui.org/doc/install/linux)）。中文字体已随应用打包，无需额外安装。
 - **macOS**：需要 Xcode 命令行工具。
 
-界面字体链为 `Go, Noto Sans SC`，等宽字体链为 `Go Mono, Noto Sans SC`。Noto Sans SC 常规与粗体通过 Go embed 打包，原生界面和原型共用，字号保持 13 / 11.5 / 12。字体来自 [Noto 官方仓库](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/SC)，许可见 `internal/uifont/assets/OFL.txt`。
+界面字体链为 `Go, Noto Sans SC`，等宽字体链为 `Go Mono, Noto Sans SC`。Noto Sans SC 常规与粗体通过 Go embed 打包，原生界面使用，字号保持 13 / 11.5 / 12。字体来自 [Noto 官方仓库](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/SC)，许可见 `internal/uifont/assets/OFL.txt`。
 
 ## 打包与发布
 
