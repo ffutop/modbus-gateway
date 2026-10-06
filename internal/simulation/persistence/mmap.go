@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/edsrzf/mmap-go"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 // MmapStorage implements persistence using memory-mapped files.

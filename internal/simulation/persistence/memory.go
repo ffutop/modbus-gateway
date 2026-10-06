@@ -4,7 +4,7 @@
 
 package persistence
 
-import "github.com/ffutop/modbus-gateway/internal/local-slave/model"
+import "github.com/ffutop/modbus-gateway/internal/simulation/model"
 
 // MemoryStorage is a no-op storage (non-persistent).
 type MemoryStorage struct{}

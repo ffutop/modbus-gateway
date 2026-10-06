@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 // FileStorage implements persistence using file operations.

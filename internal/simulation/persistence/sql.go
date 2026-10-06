@@ -8,7 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 // SQLStorage implements persistence using a SQL database.

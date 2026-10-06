@@ -2,25 +2,25 @@
 // This software may be modified and distributed under the terms
 // of the BSD-3 Clause License. See the LICENSE file for details.
 
-package localslave
+package local
 
 import (
 	"context"
 	"encoding/binary"
 	"testing"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
-	"github.com/ffutop/modbus-gateway/internal/simulation"
 	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/simulation"
+	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 )
 
-func newTestSlave(t *testing.T) (*LocalSlave, *simulation.Simulation) {
+func newTestSlave(t *testing.T) (*Client, *simulation.Simulation) {
 	t.Helper()
 	sim, err := simulation.Open("sim", persistence.NewMemoryStorage())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	return NewLocalSlave(sim), sim
+	return NewClient(sim), sim
 }
 
 func TestLocalSlave_WriteAndReadCoil(t *testing.T) {
@@ -31,7 +31,7 @@ func TestLocalSlave_WriteAndReadCoil(t *testing.T) {
 		FunctionCode: modbus.FuncCodeWriteSingleCoil,
 		Data:         []byte{0x00, 0x05, 0xFF, 0x00},
 	}
-	if _, err := s.Process(ctx, writeReq); err != nil {
+	if _, err := s.Send(ctx, 1, writeReq); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if sim.Version() != 1 {
@@ -42,7 +42,7 @@ func TestLocalSlave_WriteAndReadCoil(t *testing.T) {
 		FunctionCode: modbus.FuncCodeReadCoils,
 		Data:         []byte{0x00, 0x05, 0x00, 0x01},
 	}
-	resp, err := s.Process(ctx, readReq)
+	resp, err := s.Send(ctx, 1, readReq)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestLocalSlave_WriteAndReadHoldingRegister(t *testing.T) {
 		FunctionCode: modbus.FuncCodeWriteSingleRegister,
 		Data:         []byte{0x00, 0x0A, 0x30, 0x39},
 	}
-	if _, err := s.Process(ctx, writeReq); err != nil {
+	if _, err := s.Send(ctx, 1, writeReq); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestLocalSlave_WriteAndReadHoldingRegister(t *testing.T) {
 		FunctionCode: modbus.FuncCodeReadHoldingRegisters,
 		Data:         []byte{0x00, 0x0A, 0x00, 0x01},
 	}
-	resp, err := s.Process(ctx, readReq)
+	resp, err := s.Send(ctx, 1, readReq)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestLocalSlave_ReadDiscreteInputs_ReflectsInjectedData(t *testing.T) {
 		FunctionCode: modbus.FuncCodeReadDiscreteInputs,
 		Data:         []byte{0x00, 0x02, 0x00, 0x01},
 	}
-	resp, err := s.Process(ctx, readReq)
+	resp, err := s.Send(ctx, 1, readReq)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestLocalSlave_UnknownFunctionCode_ReturnsIllegalFunction(t *testing.T) {
 	s, _ := newTestSlave(t)
 	ctx := context.Background()
 
-	resp, err := s.Process(ctx, modbus.ProtocolDataUnit{FunctionCode: 0x63})
+	resp, err := s.Send(ctx, 1, modbus.ProtocolDataUnit{FunctionCode: 0x63})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

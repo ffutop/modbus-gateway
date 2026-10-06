@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
 )
 
 func TestMemoryStorage_OnWrite_NeverFails(t *testing.T) {
