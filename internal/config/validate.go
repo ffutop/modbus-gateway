@@ -6,6 +6,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 
 	"github.com/ffutop/modbus-gateway/internal/routing"
 )
@@ -19,20 +21,85 @@ func (r addrRange) overlaps(o addrRange) bool {
 	return r.start < o.end && o.start < r.end
 }
 
+// Problem is one rule violation, located by its path in the config file
+// (e.g. ["gateways", 0, "downstreams", 1, "slave_ids"]), so an editor can
+// point at the offending field.
+type Problem struct {
+	Path    []any  `json:"path"`
+	Message string `json:"message"`
+}
+
 // Validate checks cross-cutting rules that can only be enforced once the
-// whole config has been parsed and normalized: simulation references,
-// mapping validity/overlap (both within an injector and across every
-// injector sharing a simulation), single-slave-ID entries, and (v1 only)
-// duplicate upstream listen addresses. It runs for both v0 and v1 configs;
-// v0 configs simply never exercise the injector/mapping branches.
+// whole config has been parsed and normalized, and returns the first
+// violation. It is what LoadConfig enforces; see Problems for the full list
+// the desktop app's editor shows.
 func (c *Config) Validate() error {
+	if p := c.loadProblems(); len(p) > 0 {
+		return fmt.Errorf("%s", p[0].Message)
+	}
+	return nil
+}
+
+// Problems lists everything that would stop this config from starting: the
+// Validate rules plus the slave ID routing rules internal/app applies while
+// building routing tables. LoadConfig does not enforce the routing rules
+// itself, so the command line keeps reporting them exactly as it always has.
+func (c *Config) Problems() []Problem {
+	return append(c.loadProblems(), c.routingProblems()...)
+}
+
+// routingProblems mirrors how internal/app builds each gateway's routing
+// table: a lone downstream without slave_ids is the legacy default route,
+// downstreams of unknown type or without slave_ids are skipped, and every
+// other downstream's IDs must parse and route to it alone.
+func (c *Config) routingProblems() []Problem {
+	var problems []Problem
+	for gi, gw := range c.Gateways {
+		if len(gw.Downstreams) == 1 && gw.Downstreams[0].SlaveIDs == "" {
+			continue
+		}
+		routedBy := make(map[byte]string)
+		for di, ds := range gw.Downstreams {
+			if !knownDownstreamTypes[ds.Type] || ds.SlaveIDs == "" {
+				continue
+			}
+			path := []any{"gateways", gi, "downstreams", di, "slave_ids"}
+			name := ds.DisplayName(di)
+			ids, err := routing.ParseSlaveIDs(ds.SlaveIDs)
+			if err != nil {
+				problems = append(problems, Problem{Path: path, Message: fmt.Sprintf("gateway %q downstream %q: invalid slave_ids %q: %v", gw.Name, name, ds.SlaveIDs, err)})
+				continue
+			}
+			for _, id := range ids {
+				if other, taken := routedBy[id]; taken {
+					problems = append(problems, Problem{Path: path, Message: fmt.Sprintf("gateway %q downstream %q: slave ID %d is already routed to downstream %q", gw.Name, name, id, other)})
+					break
+				}
+				routedBy[id] = name
+			}
+		}
+	}
+	return problems
+}
+
+// knownDownstreamTypes are the types internal/app can create; it skips others.
+var knownDownstreamTypes = map[string]bool{"tcp": true, "rtu": true, "rtu-over-tcp": true, "local": true, "injector": true}
+
+func (c *Config) loadProblems() []Problem {
+	var problems []Problem
+	add := func(path []any, format string, args ...any) {
+		problems = append(problems, Problem{Path: path, Message: fmt.Sprintf(format, args...)})
+	}
+
 	simNames := make(map[string]bool, len(c.Simulations))
-	for _, s := range c.Simulations {
+	for si, s := range c.Simulations {
+		path := []any{"simulations", si, "name"}
 		if s.Name == "" {
-			return fmt.Errorf("config: simulation name must not be empty")
+			add(path, "config: simulation name must not be empty")
+			continue
 		}
 		if simNames[s.Name] {
-			return fmt.Errorf("config: duplicate simulation name %q", s.Name)
+			add(path, "config: duplicate simulation name %q", s.Name)
 		}
 		simNames[s.Name] = true
 	}
@@ -45,45 +112,49 @@ func (c *Config) Validate() error {
 	// Upstream listen addresses/devices, v1 only.
 	listenSeen := make(map[string]string)
 
-	for _, gw := range c.Gateways {
+	for gi, gw := range c.Gateways {
 		if c.Version == 1 {
-			for _, us := range gw.Upstreams {
+			for ui, us := range gw.Upstreams {
 				if err := checkListenConflict(listenSeen, gw.Name, us); err != nil {
-					return err
+					add([]any{"gateways", gi, "upstreams", ui}, "%v", err)
 				}
 			}
 		}
 
-		for _, ds := range gw.Downstreams {
+		for di, ds := range gw.Downstreams {
+			dsPath := func(field ...any) []any { return append([]any{"gateways", gi, "downstreams", di}, field...) }
+			prefix := fmt.Sprintf("gateway %q downstream %q: ", gw.Name, ds.Name)
+
 			switch ds.Type {
 			case "local":
 				if err := validateSimRef(simNames, ds.SimulationRef); err != nil {
-					return fmt.Errorf("gateway %q downstream %q: %w", gw.Name, ds.Name, err)
+					add(dsPath("simulation", "ref"), prefix+"%v", err)
 				}
 				if c.Version == 1 {
 					if len(ds.Mappings) > 0 {
-						return fmt.Errorf("gateway %q downstream %q: 'local' must not declare simulation.mappings", gw.Name, ds.Name)
+						add(dsPath("simulation", "mappings"), prefix+"'local' must not declare simulation.mappings")
 					}
 					if err := validateSingleSlaveID(ds.SlaveIDs); err != nil {
-						return fmt.Errorf("gateway %q downstream %q: %w", gw.Name, ds.Name, err)
+						add(dsPath("slave_ids"), prefix+"%v", err)
 					}
 				}
 
 			case "injector":
 				if c.Version != 1 {
-					return fmt.Errorf("gateway %q downstream %q: downstream type 'injector' requires version: 1", gw.Name, ds.Name)
+					add(dsPath("type"), prefix+"downstream type 'injector' requires version: 1")
+					continue
 				}
 				if err := validateSimRef(simNames, ds.SimulationRef); err != nil {
-					return fmt.Errorf("gateway %q downstream %q: %w", gw.Name, ds.Name, err)
+					add(dsPath("simulation", "ref"), prefix+"%v", err)
 				}
 				if err := validateSingleSlaveID(ds.SlaveIDs); err != nil {
-					return fmt.Errorf("gateway %q downstream %q: %w", gw.Name, ds.Name, err)
+					add(dsPath("slave_ids"), prefix+"%v", err)
 				}
 				if len(ds.Mappings) == 0 {
-					return fmt.Errorf("gateway %q downstream %q: 'injector' requires at least one mapping", gw.Name, ds.Name)
+					add(dsPath("simulation", "mappings"), prefix+"'injector' requires at least one mapping")
 				}
-				if err := validateMappings(ds, targetsBySimTable); err != nil {
-					return fmt.Errorf("gateway %q downstream %q: %w", gw.Name, ds.Name, err)
+				if mi, err := validateMappings(ds, targetsBySimTable); err != nil {
+					add(dsPath("simulation", "mappings", mi), prefix+"%v", err)
 				}
 
 			default:
@@ -92,7 +163,49 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if c.UI.Enabled {
+		if err := checkUIListen(c.UI.Address(), c.Gateways); err != nil {
+			add([]any{"ui", "listen"}, "config: ui.listen: %v", err)
+		}
+	}
+
+	return problems
+}
+
+// checkUIListen requires a host:port the management API can bind that does
+// not collide with any Modbus TCP listener (a wildcard host collides with
+// every host on the same port).
+func checkUIListen(addr string, gateways []GatewayConfig) error {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("%q is not host:port", addr)
+	}
+	port, err := strconv.ParseUint(portStr, 10, 16)
+	if err != nil {
+		return fmt.Errorf("%q has an invalid port", addr)
+	}
+	if port == 0 {
+		return nil
+	}
+	for _, gw := range gateways {
+		for _, us := range gw.Upstreams {
+			if us.Type != "tcp" && us.Type != "rtu-over-tcp" {
+				continue
+			}
+			uHost, uPort, err := net.SplitHostPort(us.Tcp.Address)
+			if err != nil || uPort != portStr {
+				continue
+			}
+			if host == uHost || isWildcardHost(host) || isWildcardHost(uHost) {
+				return fmt.Errorf("%s collides with gateway %q upstream %s", addr, gw.Name, us.Tcp.Address)
+			}
+		}
+	}
 	return nil
+}
+
+func isWildcardHost(h string) bool {
+	return h == "" || h == "0.0.0.0" || h == "::"
 }
 
 func validateSimRef(names map[string]bool, ref string) error {
@@ -132,31 +245,33 @@ func mappingTables(m MappingConfig) (targetTable string, err error) {
 	}
 }
 
-func validateMappings(ds DownstreamConfig, targetsBySimTable map[string][]addrRange) error {
+// validateMappings returns the index of the first invalid mapping with its
+// error.
+func validateMappings(ds DownstreamConfig, targetsBySimTable map[string][]addrRange) (int, error) {
 	sourceRangesByTable := make(map[string][]addrRange, 2)
 
-	for _, m := range ds.Mappings {
+	for mi, m := range ds.Mappings {
 		targetTable, err := mappingTables(m)
 		if err != nil {
-			return err
+			return mi, err
 		}
 		if m.Source.Count == 0 {
-			return fmt.Errorf("mapping count must be greater than 0")
+			return mi, fmt.Errorf("mapping count must be greater than 0")
 		}
 
 		srcEnd := uint32(m.Source.StartAddress) + uint32(m.Source.Count)
 		if srcEnd > 65536 {
-			return fmt.Errorf("mapping source range [%d,%d) is out of bounds", m.Source.StartAddress, srcEnd)
+			return mi, fmt.Errorf("mapping source range [%d,%d) is out of bounds", m.Source.StartAddress, srcEnd)
 		}
 		tgtEnd := uint32(m.Target.StartAddress) + uint32(m.Source.Count)
 		if tgtEnd > 65536 {
-			return fmt.Errorf("mapping target range [%d,%d) is out of bounds", m.Target.StartAddress, tgtEnd)
+			return mi, fmt.Errorf("mapping target range [%d,%d) is out of bounds", m.Target.StartAddress, tgtEnd)
 		}
 
 		sr := addrRange{start: uint32(m.Source.StartAddress), end: srcEnd}
 		for _, existing := range sourceRangesByTable[m.Source.Table] {
 			if sr.overlaps(existing) {
-				return fmt.Errorf("overlapping source mapping ranges in table %q", m.Source.Table)
+				return mi, fmt.Errorf("overlapping source mapping ranges in table %q", m.Source.Table)
 			}
 		}
 		sourceRangesByTable[m.Source.Table] = append(sourceRangesByTable[m.Source.Table], sr)
@@ -165,13 +280,13 @@ func validateMappings(ds DownstreamConfig, targetsBySimTable map[string][]addrRa
 		tr := addrRange{start: uint32(m.Target.StartAddress), end: tgtEnd}
 		for _, existing := range targetsBySimTable[key] {
 			if tr.overlaps(existing) {
-				return fmt.Errorf("target range [%d,%d) in table %q overlaps another injector's mapping into simulation %q", m.Target.StartAddress, tgtEnd, targetTable, ds.SimulationRef)
+				return mi, fmt.Errorf("target range [%d,%d) in table %q overlaps another injector's mapping into simulation %q", m.Target.StartAddress, tgtEnd, targetTable, ds.SimulationRef)
 			}
 		}
 		targetsBySimTable[key] = append(targetsBySimTable[key], tr)
 	}
 
-	return nil
+	return 0, nil
 }
 
 func checkListenConflict(seen map[string]string, gatewayName string, us UpstreamConfig) error {

@@ -5,6 +5,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -571,4 +572,113 @@ gateways:
             - source: { table: coils, start_address: 100, count: 10 }
               target: { table: discrete_inputs, start_address: 10 }
 `)
+}
+
+func TestLoadConfig_ReportsTheFileItReadAndItsRevision(t *testing.T) {
+	content := "gateways:\n  - name: gw\n    upstreams: [{ type: tcp, tcp: { address: \":1502\" } }]\n    downstreams: [{ type: tcp, tcp: { address: \"10.0.0.1:502\" } }]\n"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Path != path || cfg.Revision != Revision([]byte(content)) {
+		t.Errorf("Path=%q Revision=%q, want %q and the content's revision", cfg.Path, cfg.Revision, path)
+	}
+}
+
+func uiProblems(t *testing.T, yaml string) []Problem {
+	t.Helper()
+	cfg, err := ParseDraft([]byte(yaml))
+	if err != nil {
+		t.Fatalf("ParseDraft: %v", err)
+	}
+	var out []Problem
+	for _, p := range cfg.Problems() {
+		if len(p.Path) > 0 && p.Path[0] == "ui" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func TestUI_ListenIsCheckedWhenEnabled(t *testing.T) {
+	const gateways = `
+gateways:
+  - name: gw
+    upstreams: [{ type: tcp, tcp: { address: "0.0.0.0:8090" } }]
+    downstreams: [{ type: tcp, tcp: { address: "10.0.0.1:502" } }]
+`
+	tests := []struct {
+		name, ui string
+		wantErr  bool
+	}{
+		{"disabled ignores listen", "ui: { enabled: false, listen: nonsense }", false},
+		{"valid loopback", `ui: { enabled: true, listen: "127.0.0.1:9000" }`, false},
+		{"any free port", `ui: { enabled: true, listen: "127.0.0.1:0" }`, false},
+		{"not host:port", "ui: { enabled: true, listen: nonsense }", true},
+		{"port out of range", `ui: { enabled: true, listen: "127.0.0.1:70000" }`, true},
+		{"same port as a wildcard upstream", `ui: { enabled: true, listen: "127.0.0.1:8090" }`, true},
+		{"default listen collides too", "ui: { enabled: true }", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, version := range []string{"", "version: 1\n"} {
+				got := uiProblems(t, version+tt.ui+gateways)
+				if tt.wantErr && (len(got) != 1 || fmt.Sprint(got[0].Path) != "[ui listen]") {
+					t.Errorf("%q: problems %+v, want one at [ui listen]", version, got)
+				}
+				if !tt.wantErr && len(got) != 0 {
+					t.Errorf("%q: unexpected problems %+v", version, got)
+				}
+			}
+		})
+	}
+}
+
+// Routing conflicts are reported by Problems (for the editor, predicting
+// startup) but LoadConfig keeps accepting them: main.go has always reported
+// them itself while building routes, and the CLI's behavior must not change.
+func TestRouting_ProblemsPredictStartupWithoutChangingLoadConfig(t *testing.T) {
+	const dup = `
+gateways:
+  - name: g
+    upstreams: [{ type: tcp, tcp: { address: "127.0.0.1:46103" } }]
+    downstreams:
+      - { type: tcp, slave_ids: "1-5", tcp: { address: "127.0.0.1:9" } }
+      - { type: tcp, slave_ids: "5", tcp: { address: "127.0.0.1:9" } }
+`
+	if _, err := loadYAML(t, dup); err != nil {
+		t.Errorf("LoadConfig rejected a routing conflict (main.go reports those): %v", err)
+	}
+	cfg, err := ParseDraft([]byte(dup))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Problems(); len(p) != 1 || fmt.Sprint(p[0].Path) != "[gateways 0 downstreams 1 slave_ids]" || !strings.Contains(p[0].Message, `"tcp#0"`) {
+		t.Errorf("problems = %+v, want the conflict on downstreams[1] naming tcp#0", p)
+	}
+
+	// main.go skips a downstream it cannot create, so its slave IDs never
+	// conflict with anything and the gateway starts.
+	const badType = `
+gateways:
+  - name: g
+    upstreams: [{ type: tcp, tcp: { address: "127.0.0.1:46110" } }]
+    downstreams:
+      - { type: tcp, slave_ids: "3", tcp: { address: "127.0.0.1:9" } }
+      - { type: bogus, slave_ids: "3" }
+`
+	if _, err := loadYAML(t, badType); err != nil {
+		t.Errorf("LoadConfig rejected a config that has always started: %v", err)
+	}
+	cfg, _ = ParseDraft([]byte(badType))
+	for _, p := range cfg.Problems() {
+		if p.Path[len(p.Path)-1] == "slave_ids" {
+			t.Errorf("reported %+v for a downstream main.go skips", p)
+		}
+	}
 }
