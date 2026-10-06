@@ -1,0 +1,95 @@
+// Copyright (c) 2026 Li Jinling. All rights reserved.
+// This software may be modified and distributed under the terms
+// of the BSD-3 Clause License. See the LICENSE file for details.
+
+package design
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+func load(t *testing.T) *Tokens {
+	t.Helper()
+	tok, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
+}
+
+// root is the module root; tests run in the design package directory.
+func root(rel string) string {
+	return filepath.Join("..", filepath.FromSlash(rel))
+}
+
+// TestGeneratedUpToDate fails when a generated file no longer matches
+// tokens.json, i.e. someone edited tokens.json without regenerating or
+// edited a generated file by hand.
+func TestGeneratedUpToDate(t *testing.T) {
+	for path, want := range load(t).Render() {
+		got, err := os.ReadFile(root(path))
+		if err != nil {
+			t.Errorf("%s: %v (run `go generate ./design`)", path, err)
+			continue
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s is stale; run `go generate ./design`", path)
+		}
+	}
+}
+
+// Raw color literals outside the token files bypass the design system.
+var goColor = regexp.MustCompile(`\brgb\(0x[0-9a-fA-F]+\)|color\.NRGBA\{R:\s*0x`)
+
+// TestNoRawColors keeps every color in the desktop UI flowing from the tokens.
+func TestNoRawColors(t *testing.T) {
+	var files []string
+	native, _ := filepath.Glob(root("internal/workspace/*.go"))
+	for _, f := range native {
+		if strings.HasSuffix(f, "_test.go") || strings.HasSuffix(f, "tokens_gen.go") {
+			continue
+		}
+		files = append(files, "internal/workspace/"+filepath.Base(f))
+	}
+	if len(files) == 0 {
+		t.Fatal("no workspace sources found")
+	}
+	for _, rel := range files {
+		data, err := os.ReadFile(root(rel))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			if m := goColor.FindString(line); m != "" {
+				t.Errorf("%s:%d: raw color %q; use a token from design/tokens.json", rel, i+1, m)
+			}
+		}
+	}
+}
+
+func TestContrastRules(t *testing.T) {
+	tok := load(t)
+	for _, r := range ContrastRules {
+		fg, _ := tok.Hex(r.Fg)
+		bg, _ := tok.Hex(r.Bg)
+		if c := Contrast(fg, bg); c < r.Min {
+			t.Errorf("%s on %s: contrast %.2f < %v", r.Fg, r.Bg, c, r.Min)
+		}
+	}
+}
+
+// TestFileRoundTrip keeps saves from the token studio diff-stable: tokens.json
+// is always in the canonical layout that File produces.
+func TestFileRoundTrip(t *testing.T) {
+	if got := load(t).File(); !bytes.Equal(got, tokensJSON) {
+		t.Errorf("tokens.json is not in canonical layout; run `go generate ./design`")
+	}
+}
