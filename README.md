@@ -756,7 +756,7 @@ graph LR
 
 ### Build from Source (Optional)
 
-Prefer Releases when you only need to run the gateway. Build when modifying code or using unreleased features. The root module requires Go 1.21+ and access to module dependencies on the first build:
+Prefer Releases when you only need to run the gateway. Build when modifying code or using unreleased features. All three Go modules (root, `desktop-native/` and `test/`) require Go 1.24.3+ and access to module dependencies on the first build:
 
 ```bash
 git clone https://github.com/ffutop/modbus-gateway.git
