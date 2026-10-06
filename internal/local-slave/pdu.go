@@ -10,8 +10,8 @@ import (
 	"log/slog"
 
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 )
 
 // exception builds a Modbus exception response PDU. Shared by LocalSlave and

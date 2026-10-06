@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 // LocalSlave implements the standard Modbus protocol logic (FC01-06,15,16)

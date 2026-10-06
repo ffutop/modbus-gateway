@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 func TestServer_Start_And_Handle(t *testing.T) {

@@ -11,9 +11,9 @@ import (
 	"log/slog"
 
 	"github.com/ffutop/modbus-gateway/internal/config"
-	"github.com/ffutop/modbus-gateway/modbus"
-	rtupacket "github.com/ffutop/modbus-gateway/modbus/rtu"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	rtupacket "github.com/ffutop/modbus-gateway/internal/modbus/rtu"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 	"github.com/grid-x/serial"
 )
 

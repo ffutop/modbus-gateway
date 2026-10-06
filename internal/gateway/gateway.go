@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/routing"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/transport"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/transport"
 )
 
 // Gateway represents a single gateway instance.

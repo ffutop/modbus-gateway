@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/modbus/crc"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus/crc"
 )
 
 type mockPort struct {

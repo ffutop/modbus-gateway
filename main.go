@@ -20,12 +20,12 @@ import (
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/transport"
-	"github.com/ffutop/modbus-gateway/transport/injector"
-	"github.com/ffutop/modbus-gateway/transport/local"
-	"github.com/ffutop/modbus-gateway/transport/rtu"
-	rtuovertcp "github.com/ffutop/modbus-gateway/transport/rtu-over-tcp"
-	"github.com/ffutop/modbus-gateway/transport/tcp"
+	"github.com/ffutop/modbus-gateway/internal/transport"
+	"github.com/ffutop/modbus-gateway/internal/transport/injector"
+	"github.com/ffutop/modbus-gateway/internal/transport/local"
+	"github.com/ffutop/modbus-gateway/internal/transport/rtu"
+	rtuovertcp "github.com/ffutop/modbus-gateway/internal/transport/rtu-over-tcp"
+	"github.com/ffutop/modbus-gateway/internal/transport/tcp"
 )
 
 func main() {

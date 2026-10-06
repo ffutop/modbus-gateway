@@ -11,7 +11,7 @@ import (
 
 	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 // ResolvedMapping is a validated, address-resolved mapping from a standard

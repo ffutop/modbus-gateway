@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ffutop/modbus-gateway/internal/config"
-	"github.com/ffutop/modbus-gateway/modbus"
-	"github.com/ffutop/modbus-gateway/modbus/crc"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus/crc"
 )
 
 func TestClient_Send(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ffutop/modbus-gateway/modbus"
-	rtupacket "github.com/ffutop/modbus-gateway/modbus/rtu"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
+	rtupacket "github.com/ffutop/modbus-gateway/internal/modbus/rtu"
 )
 
 const (

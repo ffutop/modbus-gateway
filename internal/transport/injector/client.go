@@ -15,7 +15,7 @@ import (
 	localslave "github.com/ffutop/modbus-gateway/internal/local-slave"
 	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
 	"github.com/ffutop/modbus-gateway/internal/simulation"
-	"github.com/ffutop/modbus-gateway/modbus"
+	"github.com/ffutop/modbus-gateway/internal/modbus"
 )
 
 // Client implements Downstream for the injector adapter.
