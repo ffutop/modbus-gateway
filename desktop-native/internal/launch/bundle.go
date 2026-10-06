@@ -1,9 +1,8 @@
-// Package launch prepares writable user data for a packaged app launched from
-// the desktop: a macOS app bundle, or a Windows or Linux archive.
+// Package launch resolves where the desktop app keeps its configuration and
+// log when it starts.
 package launch
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,75 +11,59 @@ import (
 )
 
 type Paths struct {
-	Config  string
-	WorkDir string
-	Log     string
+	Config string // absolute; the file may not exist yet
+	Log    string // empty: log to stderr
 }
 
-// Sample is the first-run configuration a package ships: in Contents/Resources
-// of a macOS bundle, beside the executable in a Windows or Linux archive.
-const Sample = "config.default.yaml"
+// ConfigName is the configuration the app opens by default, in AppDir.
+const ConfigName = "config.yaml"
 
-// Prepare leaves command-line launches unchanged. A packaged app gets a private
-// editable copy of its sample configuration in the user's directories,
-// separate from the installed (on macOS, signed) files.
-func Prepare(executable, home, explicitConfig string) (Paths, error) {
-	return prepare(executable, home, explicitConfig, runtime.GOOS, os.Getenv)
+// Prepare resolves the configuration to open first: the -config file if
+// given, otherwise ConfigName in AppDir, which the editor creates on the first
+// save. A packaged app — a macOS bundle, or a build marked packaged — has no
+// terminal, so it logs to the platform's user log directory.
+func Prepare(executable, home, explicitConfig string, packaged bool) (Paths, error) {
+	return prepare(executable, home, explicitConfig, packaged, runtime.GOOS, os.Getenv)
 }
 
-func prepare(executable, home, explicitConfig, goos string, getenv func(string) string) (Paths, error) {
-	if explicitConfig != "" {
-		return Paths{Config: explicitConfig}, nil
+func prepare(executable, home, explicitConfig string, packaged bool, goos string, getenv func(string) string) (Paths, error) {
+	config := explicitConfig
+	if config == "" {
+		config = filepath.Join(AppDir(executable), ConfigName)
 	}
-	sample, ok := packagedSample(executable)
-	if !ok {
-		return Paths{}, nil
-	}
-	p, err := userPaths(goos, home, getenv)
+	config, err := filepath.Abs(config)
 	if err != nil {
+		return Paths{}, err
+	}
+	p := Paths{Config: config}
+	if !packaged && !inBundle(executable) {
+		return p, nil
+	}
+	if p.Log, err = logPath(goos, home, getenv); err != nil {
 		return p, err
 	}
-	if err := os.MkdirAll(p.WorkDir, 0700); err != nil {
-		return p, err
-	}
-	if _, err := os.Lstat(p.Config); errors.Is(err, os.ErrNotExist) {
-		content, err := os.ReadFile(sample)
-		if err != nil {
-			return p, fmt.Errorf("read bundled configuration: %w", err)
-		}
-		if err := seed(p.Config, content); err != nil {
-			return p, err
-		}
-	} else if err != nil {
-		return p, err
-	}
-	if err := os.MkdirAll(filepath.Dir(p.Log), 0700); err != nil {
-		return p, err
-	}
-	return p, nil
+	return p, os.MkdirAll(filepath.Dir(p.Log), 0700)
 }
 
-// packagedSample reports where a packaged app keeps its sample configuration.
-// A macOS bundle is recognized by its layout, so a missing sample is an error
-// at read time; elsewhere the sample beside the executable marks the package.
-func packagedSample(executable string) (string, bool) {
+// AppDir is the directory users see the app in: the one holding the
+// executable, or the one holding a macOS bundle, whose signed contents must
+// stay unchanged.
+func AppDir(executable string) string {
+	if inBundle(executable) {
+		return filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(executable))))
+	}
+	return filepath.Dir(executable)
+}
+
+func inBundle(executable string) bool {
 	dir := filepath.Dir(executable)
 	contents := filepath.Dir(dir)
-	if filepath.Base(dir) == "MacOS" && filepath.Base(contents) == "Contents" && strings.HasSuffix(filepath.Dir(contents), ".app") {
-		return filepath.Join(contents, "Resources", Sample), true
-	}
-	sample := filepath.Join(dir, Sample)
-	if info, err := os.Stat(sample); err == nil && info.Mode().IsRegular() {
-		return sample, true
-	}
-	return "", false
+	return filepath.Base(dir) == "MacOS" && filepath.Base(contents) == "Contents" && strings.HasSuffix(filepath.Dir(contents), ".app")
 }
 
-// userPaths follows each platform's convention: Application Support and Logs
-// on macOS, roaming AppData for the configuration and local AppData for logs
-// on Windows, and the XDG base directories elsewhere. Relative persistence
-// paths resolve beside the configuration.
-func userPaths(goos, home string, getenv func(string) string) (Paths, error) {
+// logPath follows each platform's convention: Logs on macOS, local AppData
+// on Windows, and the XDG state directory elsewhere.
+func logPath(goos, home string, getenv func(string) string) (string, error) {
 	// dir returns the absolute directory an environment variable names, or the
 	// fallback under the home directory.
 	missingHome := goos == "darwin" && home == ""
@@ -93,41 +76,17 @@ func userPaths(goos, home string, getenv func(string) string) (Paths, error) {
 		}
 		return filepath.Join(append([]string{home}, fallback...)...)
 	}
-	var config, log string
+	var log string
 	switch goos {
 	case "darwin":
-		config = filepath.Join(home, "Library", "Application Support", "ModMux")
 		log = filepath.Join(home, "Library", "Logs", "ModMux", "desktop.log")
 	case "windows":
-		config = filepath.Join(dir("APPDATA", "AppData", "Roaming"), "ModMux")
 		log = filepath.Join(dir("LOCALAPPDATA", "AppData", "Local"), "ModMux", "Logs", "desktop.log")
 	default:
-		config = filepath.Join(dir("XDG_CONFIG_HOME", ".config"), "modmux")
 		log = filepath.Join(dir("XDG_STATE_HOME", ".local", "state"), "modmux", "desktop.log")
 	}
 	if missingHome {
-		return Paths{}, fmt.Errorf("cannot locate user home directory")
+		return "", fmt.Errorf("cannot locate user home directory")
 	}
-	return Paths{Config: filepath.Join(config, "config.yaml"), WorkDir: config, Log: log}, nil
-}
-
-// Publish a complete first-run file without overwriting an existing file, even
-// if two launches initialize the same data directory concurrently.
-func seed(path string, content []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".config-initial-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(content); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err = os.Link(f.Name(), path); err != nil && !errors.Is(err, os.ErrExist) {
-		return err
-	}
-	return nil
+	return log, nil
 }

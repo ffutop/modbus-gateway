@@ -22,6 +22,8 @@ type topoNode struct {
 	ds    *Downstream
 	sim   string
 	rect  image.Rectangle
+	// placeholder stands for every master until a request or master is chosen.
+	placeholder bool
 }
 
 type topology struct {
@@ -30,10 +32,22 @@ type topology struct {
 	btns  clicks[string]
 }
 
-func (t *topology) nodes(g *Gateway) []*topoNode {
+// nodes lists the topology of g. Masters stay folded into one placeholder,
+// since short-lived connections would each add a node; master names the one
+// to show instead, e.g. the source of the selected request.
+func (t *topology) nodes(g *Gateway, master string) []*topoNode {
 	var ns []*topoNode
-	for _, m := range g.Masters {
-		ns = append(ns, &topoNode{key: "m/" + m, col: 0, title: m, sub: "主站"})
+	if master != "" {
+		ns = append(ns, &topoNode{key: "m/" + master, col: 0, title: master, sub: "主站"})
+	} else {
+		sub := "尚未观测到主站"
+		if n := len(g.Masters); n > 0 {
+			sub = fmt.Sprintf("已观测 %d 个 · 选择请求查看", n)
+			if n >= maxMasters {
+				sub = fmt.Sprintf("已观测 %d+ 个 · 选择请求查看", n)
+			}
+		}
+		ns = append(ns, &topoNode{key: "m/*", col: 0, title: "上游主站", sub: sub, placeholder: true})
 	}
 	ns = append(ns, &topoNode{key: "g", col: 1, title: g.Name + " 网关", sub: g.UpType + " " + g.UpAddr})
 	sims := map[string]bool{}
@@ -57,8 +71,7 @@ func (t *topology) nodes(g *Gateway) []*topoNode {
 
 // height is how tall the topology of g draws.
 func (t *topology) height(g *Gateway) unit.Dp {
-	rows := len(g.Masters)
-	rows = max(rows, len(g.Downstreams))
+	rows := max(1, len(g.Downstreams))
 	return unit.Dp(36 + 46*rows)
 }
 
@@ -66,6 +79,9 @@ func (t *topology) height(g *Gateway) unit.Dp {
 func click(l Link, g *Gateway, n *topoNode) Link {
 	switch n.col {
 	case 0:
+		if n.placeholder {
+			break
+		}
 		if l.Master == n.title {
 			l.Master = ""
 		} else {
@@ -105,10 +121,16 @@ func inLink(l Link, n *topoNode) bool {
 }
 
 // Layout draws the topology of l.Gw and returns the link after any click.
-func (t *topology) Layout(gtx C, l Link) (D, Link) {
+// focus is the master of the selected request, if any; the link's own master
+// filter takes precedence.
+func (t *topology) Layout(gtx C, l Link, focus string) (D, Link) {
 	th := t.th
 	g := l.Gw
-	ns := t.nodes(g)
+	master := l.Master
+	if master == "" {
+		master = focus
+	}
+	ns := t.nodes(g, master)
 	for _, n := range ns {
 		if t.btns.get(g.Name + "/" + n.key).Clicked(gtx) {
 			l = click(l, g, n)
@@ -175,9 +197,7 @@ func (t *topology) Layout(gtx C, l Link) (D, Link) {
 	}
 	gn := find("g")
 	// Edge counts follow the selected downstream, keeping failures on their own path.
-	for _, m := range g.Masters {
-		edge(find("m/"+m), gn, Link{Gw: g, Master: m, Ds: l.Ds}, false)
-	}
+	edge(ns[0], gn, Link{Gw: g, Master: master, Ds: l.Ds}, false)
 	for _, d := range g.Downstreams {
 		dn := find("d/" + d.Name)
 		edge(gn, dn, Link{Gw: g, Master: l.Master, Ds: d}, false)
@@ -186,7 +206,7 @@ func (t *topology) Layout(gtx C, l Link) (D, Link) {
 		}
 	}
 	for _, n := range ns {
-		t.node(gtx, g, n, inLink(l, n) && (l.Master != "" || l.Ds != nil || l.Sim != "" || n.col == 1))
+		t.node(gtx, g, n, !n.placeholder && inLink(l, n) && (master != "" || l.Ds != nil || l.Sim != "" || n.col == 1))
 	}
 	return D{Size: size}, l
 }
@@ -226,6 +246,8 @@ func (t *topology) node(gtx C, g *Gateway, n *topoNode, selected bool) {
 	switch {
 	case n.col == 1:
 		bg, border, fg, subFg = colDark, colDark, colOnDark, colOnDarkBody
+	case n.placeholder:
+		bg, border, fg = colSoft, colHairSoft, colMuted
 	case selected:
 		border, fg = colInk, colInk
 	case n.col == 3:

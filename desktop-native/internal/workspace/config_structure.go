@@ -89,8 +89,9 @@ func appendNode(root *yaml.Node, path, text string) (string, error) {
 	parts := strings.Split(path, ".")
 	seq := yamlAt(root, parts)
 	if seq == nil || seq.Kind != yaml.SequenceNode {
-		seq = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		yamlPut(root, parts, seq)
+		// yamlPut copies the node into the tree; append to that copy.
+		yamlPut(root, parts, &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"})
+		seq = yamlAt(root, parts)
 	}
 	index := len(seq.Content)
 	seq.Content = append(seq.Content, n.Content[0])

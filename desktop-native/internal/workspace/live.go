@@ -8,13 +8,15 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/paint"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/runlog"
 	"github.com/ffutop/modbus-gateway/internal/config"
 	"github.com/ffutop/modbus-gateway/internal/routing"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
 
 const (
-	maxExchanges = 5000
+	maxExchanges = 5000                   // requests the workspace retains, oldest dropped first
+	maxMasters   = 64                     // distinct upstream sources tracked per gateway
 	pollInterval = 100 * time.Millisecond // while requests arrive
 	idleRefresh  = time.Second            // otherwise
 )
@@ -152,7 +154,7 @@ func (w *World) record(e telemetry.Event) {
 				break
 			}
 		}
-		if !found && len(g.Masters) < 64 {
+		if !found && len(g.Masters) < maxMasters {
 			g.Masters = append(g.Masters, e.Source)
 		}
 	}
@@ -292,6 +294,8 @@ type UI struct {
 }
 
 type Info struct {
+	Logs           runlog.Source
+	Notify         func()
 	RunningContent string
 	DraftBase      string
 	Draft          string
@@ -307,6 +311,13 @@ type Info struct {
 	Runtime        live.Runtime // nil: a fixed state from Running and StartErr
 	Rebase         func(string) error
 	Save           func(string) error
+	NewFile        bool                          // Config.Path does not exist yet; the first save creates it
+	Notice         string                        // shown once, e.g. after another file was opened
+	Open           func(path string) error       // switch to another configuration file
+	SaveAs         func(path, text string) error // write the draft elsewhere and switch to it
+	// PickFile shows the platform's file chooser and returns "" if cancelled;
+	// nil, or filepicker.ErrUnavailable, falls back to the in-app dialog.
+	PickFile func(save bool, dir, name string) (string, error)
 }
 
 func New(info Info) *UI {
@@ -331,6 +342,7 @@ func New(info Info) *UI {
 	th := NewTheme()
 	cfg := newConfigEditor(th, info)
 	v := newVariantC1(th, w, cfg)
+	v.shell.logs = newLogView(th, info.Logs, info.Notify)
 	return &UI{view: v, world: w}
 }
 
@@ -364,9 +376,16 @@ func (u *UI) Layout(gtx C) D {
 	return u.view.Layout(gtx)
 }
 
+// CarryViewTo keeps the page shown after another file was opened.
+func (u *UI) CarryViewTo(next *UI) {
+	next.view.shell.module = u.view.shell.module
+	next.view.shell.logs = u.view.shell.logs
+}
+
 // CarryDraftTo keeps edits made while a restart was in flight reviewable after
 // the workspace is reconstructed. It never changes the saved or running text.
 func (u *UI) CarryDraftTo(next *UI) {
+	u.CarryViewTo(next)
 	if u.view.shell.cfg.unsaved() {
 		next.view.shell.cfg.recoveryText = u.view.shell.cfg.recoveryContent()
 		next.view.shell.cfg.recoveryConflict = false

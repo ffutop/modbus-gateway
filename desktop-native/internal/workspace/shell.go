@@ -24,10 +24,12 @@ type shell struct {
 	th         *Theme
 	world      *World
 	cfg        *configEditor
+	logs       *logView
 	module     int
-	modules    [2]widget.Clickable
+	modules    [3]widget.Clickable
 	menus      [4]widget.Clickable
-	commands   [9]widget.Clickable
+	commands   [11]widget.Clickable
+	showLogs   widget.Clickable
 	menu       int // zero means closed; otherwise one-based menu index
 	dismiss    widget.Clickable
 	modalBlock widget.Clickable
@@ -39,9 +41,9 @@ type shell struct {
 }
 
 var desktopMenus = [][]string{
-	{"编辑配置", "打开 config.yaml", "保存配置"},
+	{"编辑配置", "打开配置文件…", "保存配置", "另存为…"},
 	{"查看变更", "撤销未保存修改"},
-	{"联动监视", "配置编辑"},
+	{"联动监视", "配置编辑", "运行日志"},
 	{"保存配置（重启后生效）", "检查配置文件"},
 }
 
@@ -55,11 +57,18 @@ func (s *shell) Layout(gtx C, linked layout.Widget) D {
 	if s.cfg.conflict != nil {
 		s.cfg.updateConflict(gtx)
 	}
+	if s.cfg.files != nil {
+		s.cfg.updateFiles(gtx)
+	}
+	s.cfg.updatePick(gtx)
 	if s.cfg.deletePath != "" || s.bulkDeleteOpen() {
 		s.cfg.updateStructure(gtx)
 		s.cfg.updateWorkbench(gtx)
 	}
 	if !modalAtStart {
+		if s.showLogs.Clicked(gtx) {
+			s.module = 2
+		}
 		for i := range s.modules {
 			if s.modules[i].Clicked(gtx) {
 				s.module = i
@@ -114,26 +123,28 @@ func (s *shell) Layout(gtx C, linked layout.Widget) D {
 			}
 			s.menu = 0
 			switch i {
-			case 0, 6:
+			case 0, 7:
 				s.module = 1
 			case 1:
 				s.module = 1
-				s.cfg.modes[1].Click()
-			case 2:
+				s.cfg.openBtn.Click()
+			case 2, 9:
 				s.module = 1
 				s.cfg.save.Click()
 			case 3:
 				s.module = 1
-				s.cfg.diff.Click()
+				s.cfg.saveAsBtn.Click()
 			case 4:
 				s.module = 1
-				s.cfg.revert.Click()
+				s.cfg.diff.Click()
 			case 5:
-				s.module = 0
-			case 7:
 				s.module = 1
-				s.cfg.save.Click()
+				s.cfg.revert.Click()
+			case 6:
+				s.module = 0
 			case 8:
+				s.module = 2
+			case 10:
 				s.module = 1
 				s.cfg.modes[1].Click()
 			}
@@ -153,6 +164,9 @@ func (s *shell) Layout(gtx C, linked layout.Widget) D {
 				layout.Flexed(1, func(gtx C) D {
 					if s.module == 1 {
 						return s.cfg.Layout(gtx)
+					}
+					if s.module == 2 && s.logs != nil {
+						return s.logs.Layout(gtx, s.cfg)
 					}
 					return linked(gtx)
 				}),
@@ -229,6 +243,7 @@ func (s *shell) toolbar(gtx C) D {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx C) D { return s.cfg.configModuleTab(gtx, &s.modules[0], "联动监视", s.module == 0) }), gap(4),
 					layout.Rigid(func(gtx C) D { return s.cfg.configModuleTab(gtx, &s.modules[1], "配置编辑", s.module == 1) }),
+					gap(4), layout.Rigid(func(gtx C) D { return s.cfg.configModuleTab(gtx, &s.modules[2], "运行日志", s.module == 2) }),
 					layout.Flexed(1, layout.Spacer{}.Layout),
 					layout.Rigid(func(gtx C) D {
 						if s.module == 1 {
@@ -251,6 +266,7 @@ func (s *shell) statusBar(gtx C) D {
 				}
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(.6, func(gtx C) D { l := s.th.label(state, smallSize, fg); l.MaxLines = 1; return l.Layout(gtx) }), gap(16),
+					layout.Rigid(func(gtx C) D { return s.th.button(gtx, &s.showLogs, "查看日志", btnLink) }), gap(8),
 					layout.Rigid(func(gtx C) D {
 						if s.module == 1 {
 							return D{}
@@ -281,6 +297,9 @@ func (s *shell) canRestart() string {
 	}
 	if s.cfg.unsaved() {
 		return "请先保存或撤销配置修改"
+	}
+	if s.cfg.newFile {
+		return "请先保存配置文件"
 	}
 	return ""
 }
@@ -380,7 +399,7 @@ func (s *shell) bulkDeleteOpen() bool {
 	return s.cfg.wb.bulk != nil && s.cfg.wb.bulk.kind == "delete" && !s.cfg.wb.bulkPaused
 }
 func (s *shell) modalOpen() bool {
-	return s.confirming || s.cfg.deletePath != "" || s.bulkDeleteOpen() || s.cfg.creation != nil || s.cfg.conflict != nil
+	return s.confirming || s.cfg.deletePath != "" || s.bulkDeleteOpen() || s.cfg.creation != nil || s.cfg.conflict != nil || s.cfg.files != nil || s.cfg.picking != nil
 }
 func (s *shell) confirmationDialog(gtx C) D {
 	if !s.modalOpen() {
@@ -390,8 +409,12 @@ func (s *shell) confirmationDialog(gtx C) D {
 	s.modalBlock.Layout(gtx, func(gtx C) D { return background(gtx, colScrim, func(gtx C) D { return D{Size: gtx.Constraints.Max} }) })
 	gtx.Constraints.Min = gtx.Constraints.Max
 	return layout.Center.Layout(gtx, func(gtx C) D {
-		gtx.Constraints.Max.X = min(gtx.Constraints.Max.X-32, gtx.Dp(520))
-		gtx.Constraints.Max.Y = min(gtx.Constraints.Max.Y-48, gtx.Dp(480))
+		width, height := unit.Dp(520), unit.Dp(480)
+		if s.cfg.files != nil {
+			width, height = 640, 560
+		}
+		gtx.Constraints.Max.X = min(gtx.Constraints.Max.X-32, gtx.Dp(width))
+		gtx.Constraints.Max.Y = min(gtx.Constraints.Max.Y-48, gtx.Dp(height))
 		return outlined(gtx, colLine, colCanvas, radiusMd, func(gtx C) D {
 			return layout.UniformInset(20).Layout(gtx, func(gtx C) D {
 				if s.confirming {
@@ -410,6 +433,12 @@ func (s *shell) confirmationDialog(gtx C) D {
 				}
 				if s.cfg.conflict != nil {
 					return s.cfg.conflictPane(gtx)
+				}
+				if s.cfg.files != nil {
+					return s.cfg.filesPane(gtx)
+				}
+				if s.cfg.picking != nil {
+					return s.th.label("请在系统文件选择器中完成选择…", textSize, colBody).Layout(gtx)
 				}
 				if s.cfg.creation != nil {
 					return s.cfg.creationPane(gtx)
@@ -444,13 +473,18 @@ func (s *shell) shortcuts(gtx C) {
 	}
 	if !s.modalOpen() && s.module == 1 {
 		for _, mod := range []key.Modifiers{key.ModCtrl, key.ModCommand} {
-			names := []key.Name{"S", "F"}
+			names := []key.Name{"S", "F", "O"}
 			if !s.cfg.textFocused(gtx) {
 				names = append(names, "Z", "Y")
 			}
 			for _, name := range names {
 				filters = append(filters, key.Filter{Name: name, Required: mod, Optional: key.ModShift})
 			}
+		}
+	}
+	if !s.modalOpen() && s.module == 2 {
+		for _, mod := range []key.Modifiers{key.ModCtrl, key.ModCommand} {
+			filters = append(filters, key.Filter{Name: "F", Required: mod})
 		}
 	}
 	for {
@@ -468,6 +502,8 @@ func (s *shell) shortcuts(gtx C) {
 				s.cfg.wb.optionPath = ""
 			} else if s.cfg.creation != nil {
 				s.cfg.creation.clicks.get("cancel").Click()
+			} else if s.cfg.files != nil {
+				s.cfg.files.clicks.get("cancel").Click()
 			} else if s.cfg.conflict != nil {
 				s.cfg.conflict = nil
 			} else if s.confirming {
@@ -490,9 +526,21 @@ func (s *shell) shortcuts(gtx C) {
 			}
 			continue
 		}
+		if s.module == 2 {
+			if k.Name == "F" && s.logs != nil {
+				gtx.Execute(key.FocusCmd{Tag: &s.logs.query})
+			}
+			continue
+		}
 		switch k.Name {
 		case "S":
-			s.cfg.save.Click()
+			if k.Modifiers.Contain(key.ModShift) {
+				s.cfg.saveAsBtn.Click()
+			} else {
+				s.cfg.save.Click()
+			}
+		case "O":
+			s.cfg.openBtn.Click()
 		case "Z":
 			if k.Modifiers.Contain(key.ModShift) {
 				s.cfg.wb.clicks.get("redo").Click()
@@ -533,6 +581,10 @@ func (s *shell) modalFocus(gtx C, back bool) {
 			}
 		}
 		tags = append(tags, c.clicks.get("cancel"), c.clicks.get("confirm"))
+	} else if s.cfg.picking != nil {
+		return // the system chooser has the focus
+	} else if d := s.cfg.files; d != nil {
+		tags = append(tags, d.clicks.get("up"), &d.location, &d.name, d.clicks.get("cancel"), d.clicks.get("confirm"))
 	} else if s.confirming {
 		tags = append(tags, &s.cancel, &s.confirm)
 	} else if s.bulkDeleteOpen() {

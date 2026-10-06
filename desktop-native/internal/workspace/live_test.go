@@ -234,3 +234,62 @@ func TestStartupFailureAndEmptyConfigLayout(t *testing.T) {
 		u.Layout(layout.Context{Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1100, 680))})
 	}
 }
+
+func TestTopologyFoldsMastersUntilOneIsChosen(t *testing.T) {
+	w := newLiveWorld(parsed(t, liveConfig("127.0.0.1:15020")), nil)
+	g := w.Gateways[0]
+	before := (&topology{world: w}).height(g)
+	for i := 0; i < 40; i++ {
+		w.record(telemetry.Event{Seq: uint64(i + 1), Gateway: "demo", Source: fmt.Sprintf("10.0.0.1:%d", 40000+i), FunctionCode: 3})
+	}
+	tp := &topology{th: NewTheme(), world: w, btns: clicks[string]{}}
+	if tp.height(g) != before {
+		t.Fatal("masters grow the topology")
+	}
+	masters := func(ns []*topoNode) (n int, first *topoNode) {
+		for _, x := range ns {
+			if x.col == 0 {
+				n++
+				if first == nil {
+					first = x
+				}
+			}
+		}
+		return n, first
+	}
+	if n, m := masters(tp.nodes(g, "")); n != 1 || !m.placeholder {
+		t.Fatal("masters not folded into a placeholder")
+	}
+	if n, m := masters(tp.nodes(g, "10.0.0.1:40003")); n != 1 || m.placeholder || m.title != "10.0.0.1:40003" {
+		t.Fatal("chosen master not shown")
+	}
+	if l := click(Link{Gw: g}, g, &topoNode{col: 0, placeholder: true}); l.Master != "" {
+		t.Fatal("placeholder click filtered by master")
+	}
+}
+
+func TestRequestListFillsFromTop(t *testing.T) {
+	w := newLiveWorld(parsed(t, liveConfig("127.0.0.1:15020")), nil)
+	v := newLinkedView(NewTheme(), w)
+	l := Link{Gw: w.Gateways[0]}
+	frame := func() {
+		var ops op.Ops
+		gtx := layout.Context{Ops: &ops, Now: time.Now(), Metric: unit.Metric{PxPerDp: 1, PxPerSp: 1}, Constraints: layout.Exact(image.Pt(1000, 500))}
+		v.Layout(gtx, l, false, func(gtx C, x *Exchange) D { return D{} })
+	}
+	for i := 0; i < 3; i++ {
+		w.record(telemetry.Event{Seq: uint64(i + 1), Gateway: "demo", Downstream: "local", FunctionCode: 3, Quantity: 1})
+	}
+	frame()
+	frame()
+	if p := v.traffic.Position; p.First != 0 || p.Offset != 0 || !v.traffic.ScrollToEnd {
+		t.Fatalf("short list not top aligned: %+v", p)
+	}
+	for i := 3; i < 200; i++ {
+		w.record(telemetry.Event{Seq: uint64(i + 1), Gateway: "demo", Downstream: "local", FunctionCode: 3, Quantity: 1})
+	}
+	frame()
+	if p := v.traffic.Position; p.First == 0 || p.BeforeEnd {
+		t.Fatalf("long list stopped following: %+v", p)
+	}
+}

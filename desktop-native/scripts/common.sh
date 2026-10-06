@@ -22,7 +22,8 @@ esac
 output_dir=${1:-"$native_root/dist"}
 mkdir -p "$output_dir"
 output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
-ldflags="-s -w -X main.version=$version"
+# packaged: the app has no terminal, so it logs to the user log directory.
+ldflags="-s -w -X main.version=$version -X main.packaged=true"
 
 # stage_dir GOOS: an empty directory for this target's unpacked contents.
 stage_dir() {
@@ -32,9 +33,8 @@ stage_dir() {
     printf '%s' "$stage"
 }
 
-# copy_shared DIR: the first-run sample and licenses every package ships.
+# copy_shared DIR: the licenses every package ships.
 copy_shared() {
-    cp "$native_root/packaging/config.default.yaml" "$1/config.default.yaml"
     cp "$native_root/../LICENSE" "$1/LICENSE"
     cp "$native_root/internal/uifont/assets/OFL.txt" "$1/NotoSansSC-OFL.txt"
 }

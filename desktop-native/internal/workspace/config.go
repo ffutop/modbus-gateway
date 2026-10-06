@@ -107,6 +107,14 @@ type configEditor struct {
 	recoveryChanged                      time.Time
 	th                                   *Theme
 	saveFile                             func(string) error
+	openFile                             func(string) error
+	saveAsFile                           func(path, text string) error
+	files                                *fileDialog
+	pickFile                             func(save bool, dir, name string) (string, error)
+	picking                              *filePick
+	toastErr                             bool
+	openBtn, saveAsBtn                   widget.Clickable
+	newFile                              bool
 	configPath                           string
 	startErr                             error
 	running                              bool
@@ -165,11 +173,15 @@ type configEditor struct {
 }
 
 func newConfigEditor(th *Theme, info Info) *configEditor {
-	e := &configEditor{structure: clicks[string]{}, runtime: info.Runtime, rebaseFile: info.Rebase, th: th, saveFile: info.Save, configPath: info.Config.Path, startErr: info.StartErr, running: info.Running,
+	e := &configEditor{structure: clicks[string]{}, runtime: info.Runtime, rebaseFile: info.Rebase, th: th, saveFile: info.Save, openFile: info.Open, pickFile: info.PickFile, saveAsFile: info.SaveAs, newFile: info.NewFile, toast: info.Notice, configPath: info.Config.Path, startErr: info.StartErr, running: info.Running,
 		inputText: map[string]string{}, eds: map[string]*widget.Editor{}, opts: map[string]clicks[string]{}, treeBtn: clicks[string]{}}
 	e.tree.Axis, e.form.Axis, e.side.Axis, e.rawList.Axis = layout.Vertical, layout.Vertical, layout.Vertical, layout.Vertical
 	e.issueScroll.Axis = layout.Vertical
 	e.draft, _ = config.ParseDraft([]byte(info.Content))
+	blank := strings.TrimSpace(info.Content) == "" && info.StartErr == nil
+	if blank {
+		e.draft, _ = config.ParseDraft([]byte("version: 1\n"))
+	}
 	if e.draft == nil {
 		e.draft = &config.Config{}
 	}
@@ -201,7 +213,9 @@ func newConfigEditor(th *Theme, info Info) *configEditor {
 	e.checked = -1
 	e.raw = info.Config.Version != 1 || info.StartErr != nil
 	e.visualLocked = info.Config.Version != 1
-	if _, err := config.ParseDraft([]byte(info.Content)); err != nil {
+	if blank {
+		e.raw, e.visualLocked = false, false
+	} else if _, err := config.ParseDraft([]byte(info.Content)); err != nil {
 		e.rawErr = err.Error()
 		e.raw = true
 	}
@@ -693,6 +707,7 @@ func (e *configEditor) Layout(gtx C) D {
 		gtx.Execute(op.InvalidateCmd{})
 	}
 	if (e.save.Clicked(gtx) || apply) && !e.inputBlocked && canSave && !e.isStarting() {
+		e.toastErr = false
 		if err := e.doSave(); err != nil {
 			e.saveFailed, e.saveProblem = true, err.Error()
 			e.toast, e.toastAt = "保存失败，草稿和运行配置保留。", gtx.Now
@@ -731,11 +746,14 @@ func (e *configEditor) Layout(gtx C) D {
 					return e.issueSummary(gtx)
 				}),
 				layout.Rigid(func(gtx C) D {
+					if e.toast != "" && e.toastAt.IsZero() {
+						e.toastAt = gtx.Now
+					}
 					if e.toast == "" || (gtx.Now.Sub(e.toastAt) > 6*time.Second && !e.saveFailed) {
 						return D{}
 					}
 					bg, fg := colOkBg, colOk
-					if e.saveFailed {
+					if e.saveFailed || e.toastErr {
 						bg, fg = colErrBg, colErr
 					}
 					return background(gtx, bg, func(gtx C) D {
@@ -778,9 +796,10 @@ func (e *configEditor) Layout(gtx C) D {
 	)
 }
 
-func (e *configEditor) doSave() error {
+// draftText finishes pending edits and returns the draft as a valid file.
+func (e *configEditor) draftText() (string, error) {
 	if err := e.finishEdits(); err != nil {
-		return err
+		return "", err
 	}
 	text := e.visualYAML()
 	if e.raw {
@@ -788,10 +807,18 @@ func (e *configEditor) doSave() error {
 	}
 	cfg, err := config.ParseDraft([]byte(text))
 	if err != nil {
-		return err
+		return "", err
 	}
 	if ps := cfg.Problems(); len(ps) > 0 {
-		return fmt.Errorf("%s", ps[0].Message)
+		return "", fmt.Errorf("%s", ps[0].Message)
+	}
+	return text, nil
+}
+
+func (e *configEditor) doSave() error {
+	text, err := e.draftText()
+	if err != nil {
+		return err
 	}
 	if e.saveFile == nil {
 		return fmt.Errorf("没有可写的配置文件，请通过 -config 指定现有文件")
@@ -804,6 +831,7 @@ func (e *configEditor) doSave() error {
 		return err
 	}
 	e.savedYAML = text
+	e.newFile = false
 	e.commitBaseline()
 	e.rawSynced = text
 	if e.clearDraft != nil {
@@ -844,6 +872,12 @@ func (e *configEditor) update(gtx C) {
 	e.updateIssues(gtx)
 	if e.diff.Clicked(gtx) {
 		e.showDiff = !e.showDiff
+	}
+	if e.openBtn.Clicked(gtx) && e.openFile != nil {
+		e.chooseFile(gtx, false)
+	}
+	if e.saveAsBtn.Clicked(gtx) && e.saveAsFile != nil && e.errorCount() == 0 {
+		e.chooseFile(gtx, true)
 	}
 	if e.revert.Clicked(gtx) {
 		if cfg, err := config.ParseDraft([]byte(e.savedYAML)); err == nil {
@@ -999,8 +1033,22 @@ func (e *configEditor) toolbar(gtx C, changes []change, errs int, canSave bool) 
 										return label.Layout(gtx)
 									}), gap(8),
 									layout.Rigid(func(gtx C) D { return e.configBadge(gtx, fmt.Sprintf("v%d", e.draft.Version), colBody, colCard) }), gap(8),
+									layout.Rigid(func(gtx C) D {
+										if !e.newFile {
+											return D{}
+										}
+										return layout.Inset{Right: 8}.Layout(gtx, func(gtx C) D { return e.configBadge(gtx, "新文件 · 保存时创建", colWarn, colWarnBg) })
+									}),
 									layout.Rigid(func(gtx C) D { return e.configToolbarState(gtx, changes, errs) }))
 							}), vgap(4), layout.Rigid(func(gtx C) D { l := th.label(e.configPath, smallSize, colMuted); l.MaxLines = 1; return l.Layout(gtx) }))
+					}), gap(16),
+					layout.Rigid(func(gtx C) D { return e.configButton(gtx, &e.openBtn, "打开…", btnDefault) }), gap(8),
+					layout.Rigid(func(gtx C) D {
+						draw := func(gtx C) D { return e.configButton(gtx, &e.saveAsBtn, "另存为…", btnDefault) }
+						if errs > 0 || e.saveAsFile == nil {
+							return disabled(gtx, draw)
+						}
+						return draw(gtx)
 					}), gap(16),
 					layout.Rigid(func(gtx C) D {
 						labels := [2]string{"可视化", "YAML"}
@@ -1021,6 +1069,9 @@ func (e *configEditor) toolbar(gtx C, changes []change, errs int, canSave bool) 
 						if !e.isRunning() {
 							label = "启动网关"
 						}
+						if e.newFile {
+							label = "保存并启动"
+						}
 						if e.isStarting() {
 							label = "正在应用…"
 						}
@@ -1032,7 +1083,7 @@ func (e *configEditor) toolbar(gtx C, changes []change, errs int, canSave bool) 
 							kind = btnPrimary
 						}
 						draw := func(gtx C) D { return e.configButton(gtx, &e.saveApply, label, kind) }
-						if e.isStarting() || errs > 0 || (!canSave && !e.needsApply() && e.isRunning()) {
+						if e.isStarting() || errs > 0 || (!canSave && !e.needsApply() && e.isRunning()) || (e.newFile && !canSave) {
 							return disabled(gtx, draw)
 						}
 						return draw(gtx)

@@ -42,6 +42,14 @@ YAML 模式隐藏对象树，文本区填满剩余高度并内部滚动。树使
 
 开发进度与后续验收见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
+### 运行日志
+
+“运行日志”与“联动监视”“配置编辑”同级，状态栏“查看日志”可直接进入。页面提供级别、来源（桌面／网关）、网关名称与关键词筛选，点击级别和来源按钮依次切换筛选条件；Ctrl／⌘+F 聚焦搜索。点击记录可查看、选择和复制完整消息、结构化字段及原始输出。自动跟随可关闭；暂停冻结当前画面，后台继续采集并显示新增数量，恢复后更新缓存。清空视图仅隐藏当前记录，不删除磁盘日志。
+
+日志由桌面进程独立缓存，网关停止、重启或管理 API 断连后仍可查看；每次子进程启动具有独立会话编号。最多保留 5000 条且受 4 MiB 文本缓存预算约束，单条记录超过 16 KiB 会截断并标注，历史淘汰数量可见。启动前的非结构化输出保留原文，级别显示 UNKNOWN。网关日志遵循配置的日志级别；配置日志文件时，仍同时送入桌面日志页和应用日志文件，命令行版默认输出不变。页面不读取既往磁盘日志，重新启动桌面应用后开始新的缓存。
+
+“复制筛选结果”和“导出…”使用当前可见筛选结果；导出先冻结文本快照，在页面中填写保存路径并确认，未写扩展名时补 `.log`，已有文件须再次确认覆盖。文件写入失败保留快照和路径以供重试。
+
 平台依赖：
 
 - **Windows**：不需要 CGO，渲染使用系统自带的 Direct3D 11。
@@ -71,17 +79,34 @@ macOS 的 `ModMux.app` 可从 Finder 双击；将它拖入“应用程序”后�
 
 Windows 的 exe 内嵌图标资源，资源管理器、任务栏与窗口标题栏直接显示。Linux 上 Gio 不设置窗口图标，桌面环境按窗口的应用 ID（`com.ffutop.modmux.native`，即 X11 的 `WM_CLASS` 与 Wayland 的 `app_id`）查找同名桌面入口再取图标；解压后运行 `./install.sh` 把桌面入口与图标装入当前用户的 `$XDG_DATA_HOME`（默认 `~/.local/share`），之后可从应用菜单启动，Dock／任务栏显示 ModMux 图标。入口指向解压目录中的可执行文件，移动目录后需重新运行；`./install.sh --uninstall` 移除。
 
-### 首次启动
+### 配置文件
 
-macOS 应用包，或旁边带有 `config.default.yaml` 的 Windows／Linux 可执行文件（即解压后的发布包），在未指定 `-config` 时按打包应用启动，首次启动以该示例创建用户配置：
+未指定 `-config` 时，应用打开“应用所在目录”下的 `config.yaml`：Windows／Linux 为可执行文件所在目录，macOS 为 `ModMux.app` 所在目录（不写入已签名的应用包内）。该文件不存在时，配置编辑页以空白 v1 草稿打开、网关不启动，工具栏标记“新文件 · 保存时创建”；首次保存才创建文件，若此前已有其他程序创建同名文件则按冲突处理，不覆盖。
 
-| 平台 | 配置（同时是相对持久化路径的工作目录） | 日志 |
-|---|---|---|
-| macOS | `~/Library/Application Support/ModMux/config.yaml` | `~/Library/Logs/ModMux/desktop.log` |
-| Windows | `%APPDATA%\ModMux\config.yaml` | `%LOCALAPPDATA%\ModMux\Logs\desktop.log` |
-| Linux | `$XDG_CONFIG_HOME/modmux/config.yaml`（默认 `~/.config`） | `$XDG_STATE_HOME/modmux/desktop.log`（默认 `~/.local/state`） |
+配置编辑页工具栏与“文件”菜单提供：
 
-默认配置为 memory 模型，在 `127.0.0.1:15020` 提供 Slave ID 1。可在应用内编辑，或退出应用后把工程配置复制到上述用户配置文件；更新／替换应用不会覆盖已有用户配置。工程中的 `config.yaml` 不会被自动打包。显式使用 `-config` 的命令行启动，以及旁边没有 `config.default.yaml` 的可执行文件（如 `go build` 的产物），继续沿用原有路径语义。
+- **打开…**（Ctrl/⌘+O）：用系统文件选择器选择 `.yaml`／`.yml` 文件。有未保存修改时须先保存、撤销或另存为。打开后编辑器切换到该文件；网关已停止且文件有效时随即启动，运行中的网关保持原配置，重启后使用新文件（差异显示为“待生效”）。
+- **另存为…**（Ctrl/⌘+Shift+S）：校验通过的草稿写入所选路径（未写扩展名时补 `.yaml`，覆盖已有文件由选择器确认），并切换到新文件；原文件的草稿恢复记录随之清除。
+
+文件选择器均为系统自带，不增加运行依赖（`internal/filepicker`）：
+
+| 平台 | 选择器 |
+|---|---|
+| macOS | `NSOpenPanel`／`NSSavePanel`（应用模态） |
+| Windows | 系统通用文件对话框（comdlg32 `GetOpenFileNameW`／`GetSaveFileNameW`，资源管理器样式，以主窗口为所有者的模态对话框；无需 CGO） |
+| Linux | XDG 桌面门户 `org.freedesktop.portal.FileChooser`（GNOME、KDE 等显示各自的原生选择器，沙箱内亦可用）；无门户时依次尝试 `zenity`、`kdialog` |
+
+都不可用时（如无门户、也未装 zenity／kdialog 的精简 Linux），退回应用内文件对话框。
+
+应用进程（及网关子进程）的工作目录始终是当前配置文件所在目录，配置中的相对持久化路径因此相对配置文件解析；切换文件时随之切换。打包应用没有终端，日志写入用户日志目录：
+
+| 平台 | 日志 |
+|---|---|
+| macOS | `~/Library/Logs/ModMux/desktop.log` |
+| Windows | `%LOCALAPPDATA%\ModMux\Logs\desktop.log` |
+| Linux | `$XDG_STATE_HOME/modmux/desktop.log`（默认 `~/.local/state`） |
+
+`go build` 的产物（未经打包脚本设置 `main.packaged`）日志输出到 stderr。发布包不附带示例配置，工程中的 `config.yaml` 也不会被打包。
 
 打包结构及启动方式参见 [Apple Bundle 文档](https://developer.apple.com/library/archive/documentation/CoreFoundation/Conceptual/CFBundles/BundleTypes/BundleTypes.html)、[Spotlight 应用视图说明](https://support.apple.com/guide/mac-help/open-apps-in-spotlight-mh35840/mac)与 [XDG Base Directory 规范](https://specifications.freedesktop.org/basedir-spec/latest/)。
 
@@ -89,14 +114,15 @@ macOS 应用包，或旁边带有 `config.default.yaml` 的 Windows／Linux 可�
 
 | 路径 | 内容 |
 |---|---|
-| `main.go` | 带 `--sidecar` 时作为网关子进程运行 `internal/cli`；否则加载配置、启动网关子进程，驱动窗口事件循环，网关重启后按配置文件重建工作台 |
+| `main.go`、`document.go` | 带 `--sidecar` 时作为网关子进程运行 `internal/cli`；否则加载配置、启动网关子进程，驱动窗口事件循环，网关重启或切换配置文件（打开／另存为，`document`）后按配置文件重建工作台 |
 | `internal/sidecar` | 子进程启动／停止／崩溃检测（`Supervisor`）与管理 API 客户端（后台缓存事件、寄存器窗口与监听状态） |
 | `internal/live` | 工作台读取的数据源（`Source`）与进程状态（`Runtime`）接口；`Local` 为测试用的进程内实现 |
 | `design` | 设计令牌唯一来源 `tokens.json`、对比度规则与生成器；规范见 [design/README.md](design/README.md) |
 | `internal/workspace` | 唯一界面：菜单、拓扑、链路／请求／模型联动、配置编辑；仅投影真实运行数据。`tokens_gen.go` 由 `go generate ./design` 生成 |
-| `internal/configfile` | 原文配置读取、校验、版本冲突检测及原子保存 |
-| `internal/launch` | 打包应用（macOS 应用包、Windows／Linux 发布包）启动时的用户配置、工作目录与日志路径 |
-| `scripts/package-*.sh`、`packaging/` | 三个平台的打包脚本；`packaging/config.default.yaml` 为各平台共用的首次启动示例，`packaging/icon/` 为图标源图，`packaging/macos/`、`packaging/linux/` 为平台专属资源 |
+| `internal/filepicker` | 系统文件选择器（macOS、Windows、Linux 门户／zenity／kdialog），不可用时返回 `ErrUnavailable` 由界面退回应用内对话框 |
+| `internal/configfile` | 原文配置读取、校验、版本冲突检测、原子保存、首次保存创建与另存为 |
+| `internal/launch` | 启动时解析默认配置路径（应用所在目录的 `config.yaml`）与打包应用的日志路径 |
+| `scripts/package-*.sh`、`packaging/` | 三个平台的打包脚本；`packaging/icon/` 为图标源图，`packaging/macos/`、`packaging/linux/` 为平台专属资源 |
 | `internal/decode` | Modbus PDU 字段解码，每个字段对应它在 PDU 中的字节区间 |
 
 ## 测试

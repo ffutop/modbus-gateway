@@ -9,6 +9,7 @@ import (
 
 	"gioui.org/io/clipboard"
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -39,7 +40,13 @@ func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []*Exchange
 			return layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx C) D {
 				return row(gtx, 34,
 					layout.Rigid(th.bold("请求", textSize, colInk).Layout), gap(8),
-					layout.Rigid(th.label(fmt.Sprintf("%d / %d", len(xs), total), smallSize, colMuted).Layout),
+					layout.Rigid(func(gtx C) D {
+						txt := fmt.Sprintf("%d / %d", len(xs), total)
+						if len(v.world.exchanges) >= maxExchanges {
+							txt += fmt.Sprintf(" · 仅保留最近 %d 条", maxExchanges)
+						}
+						return th.label(txt, smallSize, colMuted).Layout(gtx)
+					}),
 					layout.Flexed(1, layout.Spacer{}.Layout),
 					layout.Rigid(func(gtx C) D { return th.checkbox(gtx, &v.errorsOnly, "仅异常", v.onlyErrors) }), gap(12),
 					layout.Rigid(func(gtx C) D {
@@ -95,14 +102,33 @@ func (v *linkedView) trafficPane(gtx C, l Link, showMasters bool, xs []*Exchange
 				}
 				return layout.Center.Layout(gtx, th.label(txt, textSize, colMuted).Layout)
 			}
-			return material.List(th.Theme, &v.traffic).Layout(gtx, len(xs), func(gtx C, i int) D {
-				// Keep a partially scrolled request header from showing clipped glyphs
-				// against the table heading; retain its geometry and any expanded detail.
-				if i == v.traffic.Position.First && v.traffic.Position.Offset > 0 && v.traffic.Position.Offset < gtx.Dp(24) {
-					defer clip.Rect{Min: image.Pt(0, gtx.Dp(24)), Max: image.Pt(gtx.Constraints.Max.X, 1<<20)}.Push(gtx.Ops).Pop()
-				}
-				return v.trafficRow(gtx, l, xs[i], detail)
-			})
+			list := func(gtx C) D {
+				return material.List(th.Theme, &v.traffic).Layout(gtx, len(xs), func(gtx C, i int) D {
+					// Keep a partially scrolled request header from showing clipped glyphs
+					// against the table heading; retain its geometry and any expanded detail.
+					if i == v.traffic.Position.First && v.traffic.Position.Offset > 0 && v.traffic.Position.Offset < gtx.Dp(24) {
+						defer clip.Rect{Min: image.Pt(0, gtx.Dp(24)), Max: image.Pt(gtx.Constraints.Max.X, 1<<20)}.Push(gtx.Ops).Pop()
+					}
+					return v.trafficRow(gtx, l, xs[i], detail)
+				})
+			}
+			if !v.traffic.ScrollToEnd {
+				return list(gtx)
+			}
+			// A following list aligns its rows to the bottom. While they do not
+			// fill the pane, lay them out again from the top instead.
+			m := op.Record(gtx.Ops)
+			d := list(gtx)
+			call := m.Stop()
+			if p := v.traffic.Position; p.First > 0 || p.Count < len(xs) || p.OffsetLast <= 0 {
+				call.Add(gtx.Ops)
+				return d
+			}
+			v.traffic.ScrollToEnd = false
+			v.traffic.Position = layout.Position{}
+			d = list(gtx)
+			v.traffic.ScrollToEnd = true
+			return d
 		}),
 	)
 }

@@ -61,7 +61,11 @@ func (v *variantC1) Layout(gtx C) D {
 						if v.link.Gw == nil {
 							return D{}
 						}
-						d, l := v.topo.Layout(gtx, v.link)
+						focus := ""
+						if v.linked.sel != 0 {
+							focus = v.linked.selX.Source
+						}
+						d, l := v.topo.Layout(gtx, v.link, focus)
 						if l != v.link {
 							v.link = l
 							v.linked.reset()

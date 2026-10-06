@@ -36,6 +36,7 @@ func Main(version string, args []string) {
 	configFile := flags.String("config", "", "Path to config file")
 	uiListen := flags.String("ui-listen", "", "Enable the management API on this address, overriding the config's ui section (port 0 = any free port)")
 	exitOnStdinEOF := flags.Bool("exit-on-stdin-eof", false, "Shut down gracefully when stdin is closed (sidecar mode: the parent process owns the lifetime)")
+	logJSONStderr := flags.Bool("log-json-stderr", false, "Stream structured logs to stderr as well as the configured log file (desktop sidecar)")
 	flags.Parse(args)
 
 	// Load Configuration
@@ -45,7 +46,7 @@ func Main(version string, args []string) {
 		os.Exit(1)
 	}
 
-	setupLogger(cfg.Log)
+	setupLogger(cfg.Log, *logJSONStderr)
 
 	// A parent process running the gateway as a sidecar starts it with
 	// -ui-listen and reads the actual address back from the ui_ready line on
@@ -131,7 +132,7 @@ func Main(version string, args []string) {
 	slog.Info("Goodbye.")
 }
 
-func setupLogger(cfg config.LogConfig) {
+func setupLogger(cfg config.LogConfig, stream bool) {
 	opts := &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}
@@ -145,16 +146,25 @@ func setupLogger(cfg config.LogConfig) {
 	}
 
 	var handler slog.Handler
+	console := slog.NewTextHandler(os.Stdout, opts)
+	if stream {
+		// Keep stdout reserved for ui_ready; do not duplicate every record.
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		handler = console
+	}
 	if cfg.File != "" && cfg.File != "-" {
 		f, err := os.OpenFile(cfg.File, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			fmt.Printf("Failed to open log file, falling back to stdout: %v\n", err)
-			handler = slog.NewTextHandler(os.Stdout, opts)
 		} else {
-			handler = slog.NewTextHandler(f, opts)
+			fileHandler := slog.NewTextHandler(f, opts)
+			if stream {
+				handler = mirroredHandler{fileHandler, handler}
+			} else {
+				handler = fileHandler
+			}
 		}
-	} else {
-		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 	slog.SetDefault(slog.New(handler))
 }

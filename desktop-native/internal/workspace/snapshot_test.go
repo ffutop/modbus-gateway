@@ -16,6 +16,7 @@ import (
 	"gioui.org/unit"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/configfile"
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/runlog"
 	"github.com/ffutop/modbus-gateway/internal/telemetry"
 )
 
@@ -41,7 +42,7 @@ func TestWorkspaceSnapshots(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				r.Record(telemetry.Event{Time: base.Add(time.Duration(i-20) * time.Millisecond), Gateway: "demo", Downstream: "device", Source: "127.0.0.1:53124", SlaveID: 9, FunctionCode: 3, Address: 0, Quantity: 2, Request: []byte{3, 0, 0, 0, 2}, Response: []byte{3, 4, 0, 25, 0, 77}, Duration: 2 * time.Millisecond})
 			}
-			for _, state := range []string{"live", "menu", "config", "yaml", "startup-failed", "restart-confirm", "config-gateway", "config-model", "config-delete-model", "config-empty", "config-overview", "config-search", "config-picker", "config-bulk", "config-advanced", "config-recovery", "config-wizard", "config-batch-delete", "config-create-gateway", "config-create-model", "config-create-reference", "config-conflict", "config-three-versions", "config-long-values", "config-reference", "config-filter", "config-choice"} {
+			for _, state := range []string{"logs", "logs-detail", "logs-export", "logs-empty", "live", "menu", "config", "yaml", "startup-failed", "restart-confirm", "config-gateway", "config-model", "config-delete-model", "config-empty", "config-overview", "config-search", "config-picker", "config-bulk", "config-advanced", "config-recovery", "config-wizard", "config-batch-delete", "config-create-gateway", "config-create-model", "config-create-reference", "config-conflict", "config-three-versions", "config-long-values", "config-reference", "config-filter", "config-choice"} {
 				info := Info{Config: parsed(t, text), Content: text, Running: true, Source: live.Local{Recorder: r}, Save: func(string) error { return nil }, Rebase: func(string) error { return nil }}
 				if state == "startup-failed" {
 					info.Running = false
@@ -89,6 +90,29 @@ func TestWorkspaceSnapshots(t *testing.T) {
 					info.Config.Path = "/Users/engineer/Projects/factory/factory-floor.yaml"
 				}
 				u := New(info)
+				if strings.HasPrefix(state, "logs") {
+					logs := runlog.New(nil)
+					if state != "logs-empty" {
+						id := logs.BeginSession("/workspace/site-production.yaml")
+						logs.Record("gateway", id, "INFO", "TCP Server listening", "gateway", "产线网关", "addr", "127.0.0.1:15020")
+						logs.Record("gateway", id, "WARN", "No route found for slave ID", "gateway", "产线网关", "slaveID", "9")
+						logs.Record("gateway", id, "ERROR", "Downstream request failed", "gateway", "产线网关", "err", "设备读取超时："+strings.Repeat("等待响应 ", 30))
+						logs.Record("desktop", 0, "INFO", "配置已保存", "path", "/workspace/site-production.yaml")
+					}
+					u.view.shell.module = 2
+					v := newLogView(u.view.shell.th, logs, nil)
+					v.refresh(base)
+					if state == "logs-detail" {
+						v.selectEntry(v.shown[3])
+					}
+					if state == "logs-export" {
+						v.exporting = true
+						v.path.SetText("/workspace/modmux-logs.log")
+						v.overwrite = v.path.Text()
+						v.notice = "目标文件已存在，再次确认将覆盖：" + v.path.Text()
+					}
+					u.view.shell.logs = v
+				}
 				u.world.Poll(base)
 				if len(u.world.Gateways) > 0 {
 					u.view.link = Link{Gw: u.world.Gateways[0], Ds: u.world.Gateways[0].Downstreams[2]}

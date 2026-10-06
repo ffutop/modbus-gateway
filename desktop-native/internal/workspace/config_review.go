@@ -89,6 +89,9 @@ func (e *configEditor) visualYAML() string {
 	if source == "" {
 		source = e.savedYAML
 	}
+	if strings.TrimSpace(source) == "" {
+		return toYAML(e.draft) // a new file: nothing to preserve
+	}
 	var original, canonical yaml.Node
 	if yaml.Unmarshal([]byte(source), &original) != nil || yaml.Unmarshal([]byte(toYAML(e.draft)), &canonical) != nil {
 		return source
@@ -488,6 +491,9 @@ func (e *configEditor) issueSummary(gtx C) D {
 }
 
 func (e *configEditor) pendingChanges() []change {
+	if e.newFile {
+		return nil // nothing saved yet, so nothing to apply
+	}
 	if !e.pendingDiffValid || e.pendingDiffSaved != e.savedYAML || e.pendingDiffRunning != e.runningYAML {
 		e.pendingDiff = e.computePendingChanges()
 		e.pendingDiffSaved, e.pendingDiffRunning = e.savedYAML, e.runningYAML

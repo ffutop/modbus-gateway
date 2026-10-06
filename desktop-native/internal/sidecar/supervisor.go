@@ -7,6 +7,7 @@ package sidecar
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,11 +27,12 @@ const errorTail = 4
 // restarts and stops it, notices when it exits on its own, and serves the
 // current child's data. It implements live.Runtime and live.Source.
 type Supervisor struct {
-	exe, config string
-	notify      func() // called after every state change, e.g. to repaint
-	out         Output
+	exe    string
+	notify func() // called after every state change, e.g. to repaint
+	out    Output
 
 	mu                    sync.Mutex
+	config                string
 	state                 live.State
 	closed                bool
 	usingRecovery         bool
@@ -48,6 +50,14 @@ func NewSupervisor(exe, config string, notify func()) *Supervisor {
 		notify = func() {}
 	}
 	return &Supervisor{exe: exe, config: config, notify: notify, state: live.State{Phase: live.Stopped}}
+}
+
+// SetConfig makes later starts and restarts use path; a running gateway keeps
+// its configuration until then.
+func (s *Supervisor) SetConfig(path string) {
+	s.mu.Lock()
+	s.config = path
+	s.mu.Unlock()
 }
 
 // Output is the gateway's recent output.
@@ -97,8 +107,9 @@ func (s *Supervisor) launch(restart bool) {
 	s.mu.Lock()
 	override := s.override
 	s.override = ""
+	configPath := s.config
 	s.mu.Unlock()
-	bytes, _ := os.ReadFile(s.config)
+	bytes, _ := os.ReadFile(configPath)
 	var err error
 	if override != "" {
 		bytes = []byte(override)
@@ -107,10 +118,10 @@ func (s *Supervisor) launch(restart bool) {
 	s.stopCurrent()
 	var p *Process
 	if err == nil {
-		path := s.config
+		path := configPath
 		if override != "" {
 			var file *os.File
-			file, err = os.CreateTemp(filepath.Dir(s.config), ".modmux-running-*.yaml")
+			file, err = os.CreateTemp(filepath.Dir(configPath), ".modmux-running-*.yaml")
 			if err == nil {
 				path = file.Name()
 				defer os.Remove(path)
@@ -303,6 +314,7 @@ func (s *Supervisor) failReadiness(p *Process, err error) {
 	client := s.client
 	s.proc, s.client = nil, nil
 	s.mu.Unlock()
+	slog.Error("网关监听就绪检查失败", "err", err)
 	client.Close()
 	p.Stop()
 	s.mu.Lock()

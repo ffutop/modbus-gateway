@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ffutop/modbus-gateway/desktop-native/internal/live"
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/runlog"
 	"github.com/ffutop/modbus-gateway/internal/cli"
 	"github.com/ffutop/modbus-gateway/internal/gateway"
 	"github.com/ffutop/modbus-gateway/internal/modbus"
@@ -89,6 +90,48 @@ func eventually(t *testing.T, what string, ok func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestLogFileAlsoStreamsToDesktopAcrossRestarts(t *testing.T) {
+	path := writeConfig(t, freeAddr(t))
+	logPath := filepath.Join(filepath.Dir(path), "gateway.log")
+	text := fmt.Sprintf("log:\n  file: %q\n  level: info\n", logPath) + mustRead(t, path)
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := newSupervisor(t, path)
+	logs := runlog.New(nil)
+	s.Output().Logs = logs
+	s.Start()
+	eventually(t, "first run", phase(s, live.Running))
+	s.Restart()
+	eventually(t, "second run", phase(s, live.Running))
+	s.Stop()
+	b := logs.Snapshot(0)
+	starts, exits := 0, 0
+	sessions := map[uint64]bool{}
+	for _, e := range b.Entries {
+		if e.Message == "Starting Modbus Gateway..." {
+			starts++
+			sessions[e.Session] = true
+			if e.Level != "INFO" {
+				t.Fatalf("unstructured gateway log: %+v", e)
+			}
+		}
+		if e.Message == "Goodbye." {
+			exits++
+		}
+		if strings.Contains(e.Raw, `"event":"ui_ready"`) {
+			t.Fatal("handshake leaked into logs")
+		}
+	}
+	if starts != 2 || exits != 2 || len(sessions) != 2 {
+		t.Fatalf("starts=%d exits=%d sessions=%v", starts, exits, sessions)
+	}
+	onDisk, err := os.ReadFile(logPath)
+	if err != nil || strings.Count(string(onDisk), "Starting Modbus Gateway...") != 2 {
+		t.Fatalf("file output lost: %v / %s", err, onDisk)
 	}
 }
 

@@ -139,3 +139,55 @@ func TestRebaseRequiresReviewedDiskAndChecksNextExternalEdit(t *testing.T) {
 		t.Fatal("merged draft not saved")
 	}
 }
+
+func TestMissingFileIsCreatedOnFirstSaveOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	f, err := Open(path)
+	if err != nil || f.Exists() || f.Content != "" {
+		t.Fatalf("missing file: %+v %v", f, err)
+	}
+	if err := f.Save(valid); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != valid || !f.Exists() {
+		t.Fatalf("not created: %q", b)
+	}
+
+	other := filepath.Join(t.TempDir(), "config.yaml")
+	g, _ := Open(other)
+	if err := os.WriteFile(other, []byte("# created elsewhere\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *Conflict
+	if err := g.Save(valid); !errors.As(err, &conflict) || conflict.Disk != "# created elsewhere\n" {
+		t.Fatalf("file created meanwhile overwritten: %v", err)
+	}
+}
+
+func TestSaveAsReplacesTargetAndBecomesTheFile(t *testing.T) {
+	f := fixture(t)
+	target := filepath.Join(t.TempDir(), "copy.yaml")
+	if err := os.WriteFile(target, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(valid, "name: demo", "name: copy", 1)
+	g, err := SaveAs(target, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != text || g.Content != text || !g.Exists() {
+		t.Fatalf("save as: %q", b)
+	}
+	if b, _ := os.ReadFile(f.Path); string(b) != valid {
+		t.Fatal("source file changed")
+	}
+	if err := g.Save(text + "# next\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveAs(target, "version: ["); err == nil {
+		t.Fatal("invalid draft saved")
+	}
+	if _, err := SaveAs(t.TempDir(), valid); err == nil {
+		t.Fatal("directory replaced")
+	}
+}

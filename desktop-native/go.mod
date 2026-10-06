@@ -7,6 +7,7 @@ replace github.com/ffutop/modbus-gateway => ../
 require (
 	gioui.org v0.10.3
 	github.com/ffutop/modbus-gateway v0.0.0
+	github.com/godbus/dbus/v5 v5.2.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -15,7 +16,6 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/grid-x/serial v0.0.0-20211107191517-583c7356b3aa // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect

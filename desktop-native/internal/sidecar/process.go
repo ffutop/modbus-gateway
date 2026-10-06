@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ffutop/modbus-gateway/desktop-native/internal/runlog"
 )
 
 // Flag, as the first argument, makes the desktop executable run as the
@@ -35,7 +37,7 @@ const Flag = "--sidecar"
 
 // Args returns the child's command-line arguments for a config file.
 func Args(config string) []string {
-	return []string{Flag, "-config", config, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof"}
+	return []string{Flag, "-config", config, "-ui-listen", "127.0.0.1:0", "-exit-on-stdin-eof", "-log-json-stderr"}
 }
 
 const (
@@ -48,20 +50,27 @@ const (
 // Echo, if set.
 type Output struct {
 	Echo io.Writer
+	Logs *runlog.Store // assigned before the first launch; retained across restarts
 
 	mu    sync.Mutex
 	lines []string
 }
 
-func (o *Output) add(line string) {
+func (o *Output) add(line string) { o.record(line, 0) }
+func (o *Output) record(line string, session uint64) {
+	raw := line
+	line = runlog.LimitText(line)
 	o.mu.Lock()
 	o.lines = append(o.lines, line)
 	if len(o.lines) > outputLines {
 		o.lines = append(o.lines[:0:0], o.lines[len(o.lines)-outputLines:]...)
 	}
 	o.mu.Unlock()
+	if o.Logs != nil {
+		o.Logs.Append("gateway", session, raw)
+	}
 	if o.Echo != nil {
-		fmt.Fprintln(o.Echo, line)
+		fmt.Fprintln(o.Echo, raw)
 	}
 }
 
@@ -89,7 +98,26 @@ type Process struct {
 // Launch starts exe with args and returns once the child's management API
 // is listening. If the child exits or does not become ready in time, Launch
 // returns an error and the child is gone.
-func Launch(exe string, args []string, out *Output) (*Process, error) {
+func Launch(exe string, args []string, out *Output) (result *Process, launchErr error) {
+	var session uint64
+	if out.Logs != nil {
+		path := ""
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "-config" {
+				path = args[i+1]
+				break
+			}
+		}
+		session = out.Logs.BeginSession(path)
+		defer func() {
+			if launchErr != nil {
+				out.Logs.Record("gateway", session, "ERROR", "网关启动失败", "err", launchErr.Error())
+			}
+		}()
+	}
+	out.mu.Lock()
+	out.lines = nil // failure tails belong to this launch, not a previous process
+	out.mu.Unlock()
 	var b [24]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return nil, err
@@ -119,17 +147,24 @@ func Launch(exe string, args []string, out *Output) (*Process, error) {
 	drained.Add(2)
 	go func() {
 		defer drained.Done()
-		scan(stderr, out, nil)
+		scanSession(stderr, out, nil, session)
 	}()
 	go func() {
 		defer drained.Done()
-		scan(stdout, out, ready)
+		scanSession(stdout, out, ready, session)
 	}()
 	go func() {
 		// Wait only after the pipes are drained, so the output that
 		// explains an exit is recorded by the time done closes.
 		drained.Wait()
 		p.err = p.cmd.Wait()
+		if out.Logs != nil {
+			level, reason := "INFO", "正常退出"
+			if p.err != nil {
+				level, reason = "ERROR", p.err.Error()
+			}
+			out.Logs.Record("gateway", session, level, "网关进程退出", "reason", reason)
+		}
 		close(p.done)
 	}()
 
@@ -150,11 +185,14 @@ func Launch(exe string, args []string, out *Output) (*Process, error) {
 
 // scan records each line of r and sends the ui_ready address, once, to ready.
 func scan(r io.Reader, out *Output, ready chan<- string) {
+	scanSession(r, out, ready, 0)
+}
+func scanSession(r io.Reader, out *Output, ready chan<- string, session uint64) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Text()
-		out.add(line)
+		out.record(line, session)
 		if ready == nil || !strings.Contains(line, `"ui_ready"`) {
 			continue
 		}
@@ -163,6 +201,9 @@ func scan(r io.Reader, out *Output, ready chan<- string) {
 			ready <- msg.Addr
 			ready = nil
 		}
+	}
+	if err := sc.Err(); err != nil && out.Logs != nil {
+		out.Logs.Record("gateway", session, "WARN", "网关输出读取失败，后续输出可能遗漏", "err", err.Error())
 	}
 	// Keep draining after a scanner error so the child never blocks on a
 	// full pipe.

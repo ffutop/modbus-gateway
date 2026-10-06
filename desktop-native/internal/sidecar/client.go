@@ -211,7 +211,8 @@ func (c *Client) stream(ctx context.Context) {
 				added = true
 			}
 		}
-		if len(c.events) > maxEvents {
+		// Compact with some slack, so a full buffer is not copied on every batch.
+		if len(c.events) > maxEvents+maxEvents/4 {
 			c.events = append(c.events[:0:0], c.events[len(c.events)-maxEvents:]...)
 		}
 		c.mu.Unlock()
