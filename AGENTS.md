@@ -10,9 +10,9 @@ Modbus 协议转换与路由网关（Go）。一个进程内运行多个 gateway
 - `internal/simulation`（含 `model` 与 `persistence`：memory / file / mmap / sql）：共享模拟模型、持久化与写入审计；`local`、`injector` 下游在 `internal/transport/local`、`internal/transport/injector` 中把 Modbus 请求翻译为对模型的读写。
 - `internal/api`、`internal/telemetry`：管理 HTTP API（status、events、registers，供桌面版子进程模式读取）与运行指标。没有浏览器控制台。
 - `internal/transport/*`：`transport.Upstream` / `transport.Downstream` 的各协议实现；`internal/modbus/*`：PDU、RTU 帧与 CRC。网关不作为库对外提供，代码都在 `internal/` 下。
-- `desktop-native/`：唯一的桌面实现（Gio，独立 Go 模块，需 Go 1.24.3+，经 `replace` 引用根模块）。网关以子进程运行：同一可执行文件带 `--sidecar` 启动自身，经根模块的 sidecar 协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）和管理 API 通信（服务端协议在 `internal/cli`，桌面客户端在 `desktop-native/internal/sidecar`）；改动该协议或 `/api/v1/events`、`/api/v1/status` 时同步原生版客户端。
+- `desktop-native/`：唯一的桌面实现（Gio，独立 Go 模块，需 Go 1.24.3+，经 `replace` 引用根模块）。网关以子进程运行：同一可执行文件带 `--sidecar` 启动自身，经根模块的 sidecar 协议（`-exit-on-stdin-eof`、`ui_ready`、`MODMUX_UI_TOKEN`）和管理 API 通信（服务端协议在 `internal/cli`，桌面客户端在 `desktop-native/internal/sidecar`）；改动该协议或 `/api/v1/events`、`/api/v1/status` 时同步原生版客户端。桌面版区分草稿（编辑中）、已保存配置（磁盘文件）与运行配置（子进程实际加载）：保存不等于生效，应用配置靠重启整个子进程。
 - `desktop-native/design/`：设计令牌唯一来源 `tokens.json`、规范 `README.md` 与生成器；在 `desktop-native` 中运行 `go generate ./design` 生成 `internal/workspace/tokens_gen.go`。
-- `test/`：独立 Go 模块的端到端测试；`docs/`：GitHub Pages 站点、原型与 `docs/superpowers/specs/` 下的设计/PRD。
+- `test/`：独立 Go 模块的端到端测试；`docs/`：GitHub Pages 站点（`index.html`、`desktop.html`、`assets/`）与 `specs/` 下的 PRD；原型与设计过程产物不入库。
 
 ## 构建与验证
 
@@ -38,6 +38,12 @@ go build -o modbus-gateway . && (cd test && go test -v ./...)
 - **格式化只针对改动文件。** 仓库内部分既有文件未经 `gofmt`；只对自己修改的文件运行 `gofmt -w`，不要顺带重排无关文件。
 - **界面样式只来自设计令牌。** 颜色、字号、圆角改 `desktop-native/design/tokens.json` 后重新生成，不要在 `desktop-native/internal/workspace` 中写裸色值或手改生成文件；`design` 包的测试会拦截。规则见 `desktop-native/design/README.md`。
 - 根目录存在维护者的未跟踪草稿（`*.md`、`tag0.*`、`.DS_Store` 等），不要修改、删除或提交，除非任务明确涉及。
+
+## 需求与工单
+
+- 需求、PRD 与实现任务只记录在仓库内 `.scratch/<feature-slug>/`：PRD 为 `PRD.md`，任务为 `issues/<NN>-<slug>.md`（从 01 编号）。“发布到 issue tracker”即写入此处；GitHub issue 与外部 PR 不作为需求入口。
+- 文件首行写 `Status: <值>`，取 `needs-triage`（待评估）、`needs-info`（待补充信息）、`ready-for-agent`（需求已明确，可交代理实现）、`ready-for-human`（待人工实现）、`wontfix`。`ready-for-agent` 只表示可以动手，不表示已实现或已验证。后续讨论追加到文件末尾的 `## Comments`。
+- `docs/specs/` 中的 PRD 是背景材料，不是已采纳的决定；与代码不一致时以代码为准。仓库没有 ADR，不要虚构历史决定。
 
 ## 提交信息
 
