@@ -7,19 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-06
+
 ### Added
 
 - 原生桌面版新增运行日志页：汇集桌面／网关日志，支持运行会话、级别／来源／网关／关键词筛选、暂停与跟随、详情、复制、确认后导出快照及跨网关重启的有界历史缓存。子进程配置日志文件时仍向桌面发送日志，命令行版默认输出不变。
-
 - 原生桌面版配置文件可选：未指定 `-config` 时打开应用所在目录（可执行文件旁，macOS 为 `ModMux.app` 旁）的 `config.yaml`；文件不存在时编辑器以空白 v1 草稿开始、网关不启动，首次保存才创建文件，且不覆盖期间被其他程序创建的同名文件。“打开…”（Ctrl/⌘+O）与“另存为…”（Ctrl/⌘+Shift+S）使用系统自带的文件选择器（macOS 为 NSOpenPanel／NSSavePanel，Windows 为通用文件对话框，Linux 为 XDG 桌面门户，其次 zenity 或 kdialog；均不可用时退回应用内对话框）选择 `.yaml`／`.yml` 文件并把编辑器切换到所选文件；运行中的网关在重启前保持原配置。应用及网关子进程的工作目录为配置文件所在目录，相对持久化路径相对配置文件解析。
+
+### Changed
+
+- 打包的桌面应用不再附带 `config.default.yaml`，首次启动也不再创建私有配置，改为按上文打开应用所在目录的 `config.yaml`；日志仍写入平台用户日志目录。
+
+## [0.6.0] - 2026-10-05
+
+### Added
+
 - 原生删除、批量删除、网关重启与运行恢复改用模态确认弹窗；模型引用迁移在弹窗内完成，确认期间禁用背景操作。
 
 - 原生配置工作台新增搜索总览与模型选择器、完整高级参数、原子批量修改／复制／删除及下游移动、多步撤销重做、私有草稿恢复、保存并应用确认，以及本次应用会话中最近成功配置的手动运行恢复。
 
 - 原生可视化配置支持模拟模型、网关及上下游增减；模型改名与引用迁移原子联动，显式预览级联删除，保留 YAML 高级字段，支持多步撤销与重做。桌面完整性检查阻止保存不完整的 v1 网关，不改变命令行配置兼容性。
 - 原生桌面版预览（`desktop-native/`，基于 Gio）：提供桌面菜单、链路拓扑、请求／寄存器监视与可视化／YAML 配置编辑。网关在同一可执行文件启动的子进程中运行（子进程模式），界面渲染不与转发共用运行时，任一侧崩溃都会被报告而不会拖垮另一侧；关闭窗口即停止网关。保存执行校验与外部修改冲突检测，失败保留草稿；工具栏可在确认中断影响后重启网关，使保存的配置生效。状态栏显示网关正在启动、运行中或已停止（附最后几行输出），以及各上游监听状态。它是独立的 Go 模块，与根模块和端到端测试模块统一要求 Go 1.24.3 及以上。
-- macOS 应用包打包，包含几何风格 ModMux 图标、用户目录日志和打包的 Go／Noto Sans SC 字体。
-- 桌面版发布覆盖 macOS、Windows、Linux 的 amd64 与 arm64：打标签发布时，`modmux-desktop-<os>-<arch>` 压缩包与命令行版一同上传，由 `desktop-native/scripts/` 下各平台的打包脚本构建并写入发布版本号。打包应用把日志写入平台用户日志目录（`%LOCALAPPDATA%`，或 XDG 状态目录）；发布包不附带示例配置。Windows 可执行文件内嵌 ModMux 图标与版本信息；Linux 包附带 `install.sh`，为当前用户安装桌面入口与图标，应用菜单与 Dock 显示 ModMux 图标。
+- macOS 应用包打包，包含几何风格 ModMux 图标、首次启动的私有配置、用户目录日志和打包的 Go／Noto Sans SC 字体。
+- 桌面版发布覆盖 macOS、Windows、Linux 的 amd64 与 arm64：打标签发布时，`modmux-desktop-<os>-<arch>` 压缩包与命令行版一同上传，由 `desktop-native/scripts/` 下各平台的打包脚本构建并写入发布版本号。解压后的 Windows 与 Linux 包在首次启动时于平台用户目录创建配置与日志（`%APPDATA%`／`%LOCALAPPDATA%`，或 XDG 配置与状态目录）。Windows 可执行文件内嵌 ModMux 图标与版本信息；Linux 包附带 `install.sh`，为当前用户安装桌面入口与图标，应用菜单与 Dock 显示 ModMux 图标。
 - 遥测事件新增原始请求与响应 PDU。
 - 管理 API：`/api/v1/events` 以十六进制提供每个请求的 `request` 与 `response` PDU；`/api/v1/status` 列出每个上游监听的状态（`starting`、`listening`、附错误的 `failed` 或 `stopped`）。
 
@@ -104,3 +114,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/ffutop/modbus-gateway/releases/tag/v0.1.0
 
 [0.5.0]: https://github.com/ffutop/modbus-gateway/compare/v0.4.0...v0.5.0
+[0.6.0]: https://github.com/ffutop/modbus-gateway/compare/v0.5.0...v0.6.0
+[0.6.1]: https://github.com/ffutop/modbus-gateway/compare/v0.6.0...v0.6.1

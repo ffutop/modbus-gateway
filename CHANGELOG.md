@@ -7,19 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-06
+
 ### Added
 
 - Native desktop runtime log tab with desktop/gateway records, run sessions, level/source/gateway/text filters, pause and follow controls, record details, clipboard copy, confirmed snapshot export and bounded retention across gateway restarts. Sidecar logs stream to the desktop even when a log file is configured; CLI defaults remain unchanged.
-
 - Native desktop configuration file selection: without `-config` the app opens `config.yaml` in the app's directory (beside the executable, or beside `ModMux.app` on macOS); if it does not exist the editor starts from a blank v1 draft, the gateway stays stopped, and the first save creates the file without overwriting one created meanwhile. **Open…** (Ctrl/⌘+O) and **Save As…** (Ctrl/⌘+Shift+S) use the platform's own file chooser — NSOpenPanel/NSSavePanel on macOS, the common file dialogs on Windows, the XDG desktop portal (then zenity or kdialog) on Linux, falling back to an in-app dialog — for `.yaml`/`.yml` files and switch the editor to the chosen file; a running gateway keeps its configuration until restarted. The app and its gateway child work in the configuration file's directory, so relative persistence paths resolve beside it.
+
+### Changed
+
+- Packaged desktop apps no longer ship `config.default.yaml` or create a private configuration on first launch; they open `config.yaml` in the app's directory as described above. Logs still go to the platform's user log directory.
+
+## [0.6.0] - 2026-10-05
+
+### Added
+
 - Native destructive actions use modal dialogs for deletion, bulk deletion, gateway restart and recovery, with reference migration inside the deletion dialog and background input blocked.
 
 - Native configuration workbench with searchable overviews and model selectors, complete advanced parameters, atomic bulk edits/copies/deletes and downstream moves, multi-step undo/redo, private draft recovery, save-and-apply confirmation and manual recovery to the last healthy configuration in the current app session.
 
 - Native visual configuration structure editing: add/remove simulations, gateways and upstream/downstream links; atomically rename or migrate shared model references, preview explicit cascading deletion, preserve advanced YAML fields, and multi-step undo/redo. Desktop completeness checks prevent saving incomplete v1 gateways without changing CLI compatibility.
 - Native desktop app preview (`desktop-native/`, Gio): a desktop menu, link topology, request/register monitoring and visual/YAML configuration editing. The gateway runs in a child process of the same executable (sidecar mode), so rendering never shares a runtime with forwarding and a crash on either side is reported rather than taking the other down; closing the window stops the gateway. Validated saves detect external changes and retain drafts on failure; the toolbar restarts the gateway, after a confirmation naming the interruption, to apply the saved configuration. The status bar shows whether the gateway is starting, running or stopped (with its last output lines) and each listener's state. Its separate Go module shares the Go 1.24.3 minimum with the root and end-to-end test modules.
-- macOS application bundle packaging with a geometric ModMux icon, user-directory logs and bundled Go/Noto Sans SC fonts.
-- Desktop app releases for macOS, Windows and Linux on amd64 and arm64: tagged releases publish `modmux-desktop-<os>-<arch>` archives alongside the CLI, built by per-platform scripts under `desktop-native/scripts/` with the release version embedded. Packaged apps write their log to the platform's user log directory (`%LOCALAPPDATA%`, or the XDG state directory); packages ship no sample configuration. The Windows executable embeds the ModMux icon and version information; the Linux package's `install.sh` adds a desktop entry and icons for the user, so the application menu and dock show the ModMux icon.
+- macOS application bundle packaging with a geometric ModMux icon, private first-launch configuration, user-directory logs and bundled Go/Noto Sans SC fonts.
+- Desktop app releases for macOS, Windows and Linux on amd64 and arm64: tagged releases publish `modmux-desktop-<os>-<arch>` archives alongside the CLI, built by per-platform scripts under `desktop-native/scripts/` with the release version embedded. Unpacked Windows and Linux packages create their configuration and logs in the platform's user directories on first launch (`%APPDATA%`/`%LOCALAPPDATA%`, or the XDG config and state directories). The Windows executable embeds the ModMux icon and version information; the Linux package's `install.sh` adds a desktop entry and icons for the user, so the application menu and dock show the ModMux icon.
 - Telemetry events now carry the raw request and response PDUs.
 - Management API: `/api/v1/events` includes each request's `request` and `response` PDUs in hex, and `/api/v1/status` lists every upstream listener's state (`starting`, `listening`, `failed` with its error, or `stopped`).
 
@@ -107,3 +117,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/ffutop/data-diode-connector/releases/tag/v0.1.0
 
 [0.5.0]: https://github.com/ffutop/modbus-gateway/compare/v0.4.0...v0.5.0
+[0.6.0]: https://github.com/ffutop/modbus-gateway/compare/v0.5.0...v0.6.0
+[0.6.1]: https://github.com/ffutop/modbus-gateway/compare/v0.6.0...v0.6.1
