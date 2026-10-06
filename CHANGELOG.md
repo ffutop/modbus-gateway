@@ -7,44 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.1] - 2026-10-06
+## [0.6.2] - 2026-10-06
 
 ### Added
 
-- Native desktop runtime log tab with desktop/gateway records, run sessions, level/source/gateway/text filters, pause and follow controls, record details, clipboard copy, confirmed snapshot export and bounded retention across gateway restarts. Sidecar logs stream to the desktop even when a log file is configured; CLI defaults remain unchanged.
-- Native desktop configuration file selection: without `-config` the app opens `config.yaml` in the app's directory (beside the executable, or beside `ModMux.app` on macOS); if it does not exist the editor starts from a blank v1 draft, the gateway stays stopped, and the first save creates the file without overwriting one created meanwhile. **Open…** (Ctrl/⌘+O) and **Save As…** (Ctrl/⌘+Shift+S) use the platform's own file chooser — NSOpenPanel/NSSavePanel on macOS, the common file dialogs on Windows, the XDG desktop portal (then zenity or kdialog) on Linux, falling back to an in-app dialog — for `.yaml`/`.yml` files and switch the editor to the chosen file; a running gateway keeps its configuration until restarted. The app and its gateway child work in the configuration file's directory, so relative persistence paths resolve beside it.
+- Native desktop app (`desktop-native/`, Gio) with link topology, request/register monitoring, visual/YAML configuration editing and runtime logs. The gateway runs as a sidecar child of the same executable; closing the window stops it gracefully.
+- Configuration workbench with searchable overviews, shared-model reference migration, advanced parameters, atomic bulk edits/copies/deletes and downstream moves, undo/redo, private draft recovery and external-file conflict handling. Draft, saved and running configurations are tracked independently; save-and-apply and recovery require restart confirmation, and the running baseline updates only after every listener succeeds. V0 configurations retain raw-text editing and CLI compatibility.
+- Native configuration file open/save-as dialogs and keyboard shortcuts. Without `-config`, the app opens `config.yaml` beside the executable (beside `ModMux.app` on macOS). A missing file opens a blank v1 draft with the gateway stopped; first save refuses to overwrite a file created meanwhile. Relative persistence paths resolve beside the configuration file.
+- Runtime log view with desktop/gateway records, run sessions, level/source/gateway/text filters, pause/follow controls, details, clipboard copy and confirmed snapshot export. Bounded log history remains available across gateway restarts and management connection loss.
+- Read-only management API for status, request events and simulation registers, with token authentication in sidecar mode and loopback Host checks. Events include request/response PDUs in hex; status reports each upstream listener's startup, listening, failure and stopped states.
+- Desktop release packages for macOS, Windows and Linux on amd64 and arm64, with embedded release versions, ModMux icons and bundled font licenses. Windows includes icon/version resources; Linux provides a user desktop-entry installer. Desktop logs use platform user log directories.
+- CI validation for core and native desktop modules, commit-message checks, and an updated project website with a desktop application page.
 
 ### Changed
 
-- Packaged desktop apps no longer ship `config.default.yaml` or create a private configuration on first launch; they open `config.yaml` in the app's directory as described above. Logs still go to the platform's user log directory.
+- Require Go 1.24.3 across all three modules, CI and Docker builds; the root gateway previously required Go 1.21.
+- Move Modbus and transport packages under `internal/`; their previous import paths are no longer available to external consumers. Consolidate shared simulation models and persistence under `internal/simulation`, with local/injector protocol adapters under `internal/transport`.
+- Move runtime assembly from `main.go` to `internal/app` and the command to `internal/cli`, shared by the CLI and desktop sidecar. Existing CLI startup and routing behavior remain compatible; the management listener is disabled by default.
+- Use generated desktop design tokens, bundled Noto Sans SC UI fonts and Go Mono for values, grouped navigation, overview tables, two-column forms, native dropdowns and modal destructive-action confirmations.
+- Keep telemetry reads and desktop request-history projections bounded and cached to avoid copying the complete history each frame.
+- Move the Dockerfile to the repository root and restrict its build context to gateway sources.
 
-## [0.6.0] - 2026-10-05
+### Fixed
 
-### Added
-
-- Native destructive actions use modal dialogs for deletion, bulk deletion, gateway restart and recovery, with reference migration inside the deletion dialog and background input blocked.
-
-- Native configuration workbench with searchable overviews and model selectors, complete advanced parameters, atomic bulk edits/copies/deletes and downstream moves, multi-step undo/redo, private draft recovery, save-and-apply confirmation and manual recovery to the last healthy configuration in the current app session.
-
-- Native visual configuration structure editing: add/remove simulations, gateways and upstream/downstream links; atomically rename or migrate shared model references, preview explicit cascading deletion, preserve advanced YAML fields, and multi-step undo/redo. Desktop completeness checks prevent saving incomplete v1 gateways without changing CLI compatibility.
-- Native desktop app preview (`desktop-native/`, Gio): a desktop menu, link topology, request/register monitoring and visual/YAML configuration editing. The gateway runs in a child process of the same executable (sidecar mode), so rendering never shares a runtime with forwarding and a crash on either side is reported rather than taking the other down; closing the window stops the gateway. Validated saves detect external changes and retain drafts on failure; the toolbar restarts the gateway, after a confirmation naming the interruption, to apply the saved configuration. The status bar shows whether the gateway is starting, running or stopped (with its last output lines) and each listener's state. Its separate Go module shares the Go 1.24.3 minimum with the root and end-to-end test modules.
-- macOS application bundle packaging with a geometric ModMux icon, private first-launch configuration, user-directory logs and bundled Go/Noto Sans SC fonts.
-- Desktop app releases for macOS, Windows and Linux on amd64 and arm64: tagged releases publish `modmux-desktop-<os>-<arch>` archives alongside the CLI, built by per-platform scripts under `desktop-native/scripts/` with the release version embedded. Unpacked Windows and Linux packages create their configuration and logs in the platform's user directories on first launch (`%APPDATA%`/`%LOCALAPPDATA%`, or the XDG config and state directories). The Windows executable embeds the ModMux icon and version information; the Linux package's `install.sh` adds a desktop entry and icons for the user, so the application menu and dock show the ModMux icon.
-- Telemetry events now carry the raw request and response PDUs.
-- Management API: `/api/v1/events` includes each request's `request` and `response` PDUs in hex, and `/api/v1/status` lists every upstream listener's state (`starting`, `listening`, `failed` with its error, or `stopped`).
-
-### Changed
-
-- Unify all Go modules, CI and Docker builds on Go 1.24.3; building the root gateway now requires Go 1.24.3 or later instead of Go 1.21.
-
-- Rebuild the native configuration presentation around the frozen A prototype, with grouped navigation, aligned overview tables, two-column forms and native dropdown controls.
-
-- Apply the approved native configuration inspector: vector role icons and aligned trees, full-height YAML, explicit atomic creation, independent draft/saved/running diffs, custom serial baud rates, in-app conflict rebasing, keyboard navigation, and cached large-project queries. Commit the running baseline only after all listeners succeed; report management connection loss and preserve the last healthy configuration on failed application.
-
-- Gateway assembly moved from `main.go` to `internal/app`, and the command itself to `internal/cli`, so the desktop app runs exactly the CLI as its child process. Flags and startup behavior are unchanged.
-- With `-exit-on-stdin-eof`, the gateway ignores SIGPIPE: when its parent exits and no one reads its output any more, it still completes the graceful shutdown and flushes persistence instead of being killed while logging.
-- The native desktop app's colors, font sizes and radii are generated from `desktop-native/design/tokens.json` (see `desktop-native/design/README.md`). Status text uses darker green and red so badges and results meet WCAG AA contrast.
-- The native desktop app adopts a professional-tool (IDE) look: one blue for primary actions, selection and checked boxes; buttons ranked as primary, default, destructive (red outline) and link; mutually exclusive options as segmented controls and boolean filters as checkboxes instead of filter pills; 4dp control radius; Latin UI text now uses Noto Sans SC alongside Chinese instead of the Go font (monospace values keep Go Mono).
+- Close active management event streams promptly during shutdown.
+- Ignore SIGPIPE in `-exit-on-stdin-eof` mode so parent termination or closed output pipes do not interrupt graceful shutdown and persistence flushing.
+- Stream gateway logs to the desktop even when a log file is configured, without changing default CLI output. Report management connection loss and failed configuration application while retaining drafts and the last healthy session configuration.
 
 ## [0.5.0] - 2026-09-19
 
@@ -117,5 +105,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/ffutop/data-diode-connector/releases/tag/v0.1.0
 
 [0.5.0]: https://github.com/ffutop/modbus-gateway/compare/v0.4.0...v0.5.0
-[0.6.0]: https://github.com/ffutop/modbus-gateway/compare/v0.5.0...v0.6.0
-[0.6.1]: https://github.com/ffutop/modbus-gateway/compare/v0.6.0...v0.6.1
+
+[0.6.2]: https://github.com/ffutop/modbus-gateway/compare/v0.5.0...v0.6.2
