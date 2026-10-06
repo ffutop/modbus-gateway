@@ -1,0 +1,39 @@
+name: Commit Messages
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+env:
+  # Commits at or before the standard's adoption are exempt; history is not rewritten.
+  BASELINE: 75dd282
+
+jobs:
+  check:
+    name: Check Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check pull request commits
+        if: github.event_name == 'pull_request'
+        run: |
+          scripts/check-commit-msg.sh --range \
+            "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" "^$BASELINE"
+
+      - name: Check pull request title (used as the squash merge message)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: scripts/check-commit-msg.sh --message "$PR_TITLE"
+
+      - name: Check pushed commits
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          scripts/check-commit-msg.sh --range \
+            "${{ github.event.before }}..${{ github.event.after }}" "^$BASELINE"
