@@ -748,7 +748,7 @@ graph LR
 - The gateway does not provide TLS, authentication, firewall policies, or configuration hot reload.
 - Supporting a transport does not imply support for every Modbus function code; framing and the target device also impose limits.
 - Gateways may share simulation models. Independent physical channels require separate port/serial resources.
-- HTML pages under `docs/` are not connected to the running service. There is no online configuration or live monitoring management API.
+- The management API is off by default (`ui.enabled`, `ui.listen` or `-ui-listen`; default listen `127.0.0.1:8090`). It is read-only, serving status, request events and register snapshots to the native desktop app, and cannot change configuration or inject data.
 - The main program does not integrate MQTT or Kafka. Optional pprof is a Go profiling service, not a management interface.
 - Repository configuration and examples describe the current source; historical release packages may not include these capabilities.
 
