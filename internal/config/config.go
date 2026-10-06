@@ -5,7 +5,9 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -21,8 +23,14 @@ type Config struct {
 	Version     int
 	Pprof       PprofConfig
 	Log         LogConfig
+	UI          UIConfig
 	Simulations []SimulationConfig
 	Gateways    []GatewayConfig
+
+	// Path is the file actually read (after the default search paths), and
+	// Revision identifies its content at load time.
+	Path     string
+	Revision string
 }
 
 // SimulationConfig defines a named, shared simulated data model.
@@ -63,6 +71,15 @@ type DownstreamConfig struct {
 	SimulationRef string
 	// Mappings is only set for "injector" downstreams.
 	Mappings []MappingConfig
+}
+
+// DisplayName labels a downstream in messages and telemetry; unnamed ones
+// fall back to "<type>#<index within its gateway>".
+func (d DownstreamConfig) DisplayName(index int) string {
+	if d.Name != "" {
+		return d.Name
+	}
+	return fmt.Sprintf("%s#%d", d.Type, index)
 }
 
 // MappingConfig maps a standard Modbus write source range to a target range
@@ -129,6 +146,26 @@ type LogConfig struct {
 	File  string `mapstructure:"file"`  // Log file path
 }
 
+// UIConfig enables the management HTTP API (what the desktop app reads). It
+// is off unless
+// explicitly enabled, so existing deployments open no new port.
+type UIConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Listen  string `mapstructure:"listen"` // default "127.0.0.1:8090"
+}
+
+// DefaultUIListen is where the management API listens when ui.listen is
+// unset: loopback only.
+const DefaultUIListen = "127.0.0.1:8090"
+
+// Address returns the effective listen address.
+func (u UIConfig) Address() string {
+	if u.Listen == "" {
+		return DefaultUIListen
+	}
+	return u.Listen
+}
+
 // PprofConfig defines pprof configuration
 type PprofConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
@@ -141,6 +178,7 @@ type rawV0Config struct {
 	Gateways []rawV0Gateway `mapstructure:"gateways"`
 	Log      LogConfig      `mapstructure:"log"`
 	Pprof    PprofConfig    `mapstructure:"pprof"`
+	UI       UIConfig       `mapstructure:"ui"`
 }
 
 type rawV0Gateway struct {
@@ -162,6 +200,7 @@ type rawV1Config struct {
 	Version     int                `mapstructure:"version"`
 	Pprof       PprofConfig        `mapstructure:"pprof"`
 	Log         LogConfig          `mapstructure:"log"`
+	UI          UIConfig           `mapstructure:"ui"`
 	Simulations []SimulationConfig `mapstructure:"simulations"`
 	Gateways    []rawV1Gateway     `mapstructure:"gateways"`
 }
@@ -213,20 +252,7 @@ func LoadConfig(configFile string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	version, err := resolveVersion(v)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg *Config
-	switch version {
-	case 0:
-		cfg, err = loadV0(v)
-	case 1:
-		cfg, err = loadV1(v)
-	default:
-		return nil, fmt.Errorf("config: unsupported version %d (supported: 0, 1)", version)
-	}
+	cfg, err := decode(v)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +261,42 @@ func LoadConfig(configFile string) (*Config, error) {
 		return nil, err
 	}
 
+	cfg.Path = v.ConfigFileUsed()
+	content, err := os.ReadFile(cfg.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	cfg.Revision = Revision(content)
+
 	return cfg, nil
+}
+
+// ParseDraft decodes YAML config content into a normalized Config without
+// validating it, so callers can collect every Problem instead of the first.
+func ParseDraft(content []byte) (*Config, error) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	v.SetDefault("log.level", "info")
+	if err := v.ReadConfig(bytes.NewReader(content)); err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+	return decode(v)
+}
+
+// decode applies the v0 or v1 parsing rules to an already-read viper tree.
+func decode(v *viper.Viper) (*Config, error) {
+	version, err := resolveVersion(v)
+	if err != nil {
+		return nil, err
+	}
+	switch version {
+	case 0:
+		return loadV0(v)
+	case 1:
+		return loadV1(v)
+	default:
+		return nil, fmt.Errorf("config: unsupported version %d (supported: 0, 1)", version)
+	}
 }
 
 func resolveVersion(v *viper.Viper) (int, error) {
@@ -263,7 +324,7 @@ func loadV0(v *viper.Viper) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	cfg := &Config{Version: 0, Pprof: raw.Pprof, Log: raw.Log}
+	cfg := &Config{Version: 0, Pprof: raw.Pprof, Log: raw.Log, UI: raw.UI}
 
 	for gi := range raw.Gateways {
 		rg := &raw.Gateways[gi]
@@ -355,6 +416,7 @@ func loadV1(v *viper.Viper) (*Config, error) {
 		Version:     1,
 		Pprof:       raw.Pprof,
 		Log:         raw.Log,
+		UI:          raw.UI,
 		Simulations: raw.Simulations,
 	}
 

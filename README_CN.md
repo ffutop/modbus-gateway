@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://img.ffutop.com/B062BF78-A37A-4754-AFAF-DE72907588ED.png" alt="Modbus Gateway Logo" width="851" height="315">
+<img src="./docs/assets/og-image.png" alt="Modbus Gateway Logo">
 
   <a href="https://github.com/ffutop/modbus-gateway/releases">下载</a>
   ·
@@ -746,7 +746,7 @@ graph LR
 - 网关不提供 TLS、身份认证、防火墙或配置热加载。
 - 传输类型支持不代表所有 Modbus 功能码都受支持，实际还取决于帧解析与目标设备。
 - 多网关可共享仿真模型；物理通道独立需要不同端口/串口资源。
-- `docs/` 下 HTML 页面不连接实际运行服务；当前没有在线配置或实时监控管理 API。
+- 管理 API 默认关闭（`ui.enabled`、`ui.listen` 或 `-ui-listen`，缺省监听 `127.0.0.1:8090`），只读提供状态、请求事件与寄存器快照，供原生桌面版读取；不支持在线修改配置或注入数据。
 - 主程序未接入 MQTT、Kafka；pprof 是可选的 Go 性能分析服务，不是管理后台。
 - 根目录配置、代码示例与当前源码对应，不保证已包含在历史发布包中。
 
@@ -754,7 +754,7 @@ graph LR
 
 ### 源码构建（可选）
 
-仅需运行时优先使用 Releases。修改代码或使用尚未发布功能时再构建；根模块要求 Go 1.21+，首次构建需获取模块依赖：
+仅需运行时优先使用 Releases。修改代码或使用尚未发布功能时再构建；三个 Go 模块（根模块、`desktop-native/` 和 `test/`）统一要求 Go 1.24.3+，首次构建需获取模块依赖：
 
 ```bash
 git clone https://github.com/ffutop/modbus-gateway.git

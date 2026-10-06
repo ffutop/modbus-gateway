@@ -1,6 +1,6 @@
 module github.com/ffutop/modbus-gateway
 
-go 1.21
+go 1.24.3
 
 require (
 	github.com/edsrzf/mmap-go v1.2.0

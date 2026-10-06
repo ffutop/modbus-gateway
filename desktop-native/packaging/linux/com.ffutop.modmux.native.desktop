@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ModMux
+GenericName=Modbus Gateway
+GenericName[zh_CN]=Modbus 网关
+Comment=Modbus protocol conversion and routing gateway
+Comment[zh_CN]=Modbus 协议转换与路由网关
+Icon=com.ffutop.modmux.native
+Exec=@EXEC@
+Terminal=false
+Categories=Development;
+StartupNotify=true
+StartupWMClass=com.ffutop.modmux.native

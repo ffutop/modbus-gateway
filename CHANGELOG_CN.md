@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.6.2] - 2026-10-06
+
+### Added
+
+- 原生桌面应用（`desktop-native/`，基于 Gio）：提供链路拓扑、请求／寄存器监视、可视化／YAML 配置编辑与运行日志。网关由同一可执行文件以 sidecar 子进程运行；关闭窗口时优雅停止网关。
+- 配置工作台：支持搜索总览、共享模型引用迁移、高级参数、原子批量修改／复制／删除与下游移动、撤销重做、私有草稿恢复及外部文件冲突处理。草稿、已保存与运行配置独立维护；保存并应用和恢复均确认后重启，全部监听成功后才更新运行基线。V0 配置保持原文编辑及命令行兼容。
+- 系统原生配置文件打开／另存为对话框与快捷键。未指定 `-config` 时打开可执行文件旁（macOS 为 `ModMux.app` 旁）的 `config.yaml`；文件不存在时打开空白 v1 草稿，网关保持停止，首次保存拒绝覆盖期间被创建的同名文件。相对持久化路径按配置文件所在目录解析。
+- 运行日志页：汇集桌面／网关记录与运行会话，支持级别／来源／网关／关键词筛选、暂停／跟随、详情、复制及确认后导出快照。有界日志历史在网关重启和管理连接中断后仍可查看。
+- 只读管理 API：提供状态、请求事件与模拟寄存器读取，sidecar 模式使用 token 鉴权并执行 loopback Host 检查。事件携带十六进制请求／响应 PDU，状态报告各上游正在启动、监听中、失败及已停止。
+- macOS、Windows、Linux 的 amd64 与 arm64 桌面发布包：内嵌发布版本、ModMux 图标及字体许可。Windows 包含图标与版本资源，Linux 提供当前用户的桌面入口安装脚本；桌面日志写入平台用户日志目录。
+- 根模块与原生桌面模块的 CI 校验、提交信息检查，以及更新后的项目官网与桌面应用页面。
+
+### Changed
+
+- 三个 Go 模块、CI 与 Docker 构建统一要求 Go 1.24.3；根网关此前要求 Go 1.21。
+- 将 Modbus 与 transport 包移入 `internal/`，原导入路径不再供外部使用。共享模拟模型及持久化统一归入 `internal/simulation`，local／injector 协议适配归入 `internal/transport`。
+- 网关装配从 `main.go` 移至 `internal/app`，命令入口移至 `internal/cli`，由命令行版和桌面 sidecar 共用。既有命令行启动与路由行为保持兼容，管理监听默认关闭。
+- 原生界面采用生成式设计令牌、打包的 Noto Sans SC 界面字体和 Go Mono 等宽数值、分组导航、总览表格、双列表单、原生下拉控件及危险操作模态确认。
+- 遥测读取与桌面请求历史投影采用有界缓存，避免每帧复制完整历史。
+- Dockerfile 移至仓库根目录，构建上下文仅包含网关相关源文件。
+
+### Fixed
+
+- 管理事件流在关闭时及时结束。
+- `-exit-on-stdin-eof` 模式忽略 SIGPIPE，防止父进程退出或输出管道关闭时打断优雅停止及持久化刷新。
+- 网关配置日志文件时仍向桌面发送日志，命令行默认输出不变。管理连接中断与配置应用失败明确提示，并保留草稿及本次会话最近健康配置。
+
 ## [0.5.0] - 2026-09-19
 
 ### Added
@@ -73,3 +102,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/ffutop/modbus-gateway/releases/tag/v0.1.0
 
 [0.5.0]: https://github.com/ffutop/modbus-gateway/compare/v0.4.0...v0.5.0
+
+[0.6.2]: https://github.com/ffutop/modbus-gateway/compare/v0.5.0...v0.6.2

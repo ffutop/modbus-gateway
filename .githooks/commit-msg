@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Enable with: git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-msg.sh" "$1"

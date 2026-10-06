@@ -12,8 +12,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/ffutop/modbus-gateway/internal/local-slave/model"
-	"github.com/ffutop/modbus-gateway/internal/local-slave/persistence"
+	"github.com/ffutop/modbus-gateway/internal/simulation/model"
+	"github.com/ffutop/modbus-gateway/internal/simulation/persistence"
 )
 
 // Status describes the operational state of a Simulation.
@@ -96,6 +96,27 @@ func (s *Simulation) commit(table model.TableType, address, quantity uint16) {
 	if err := s.storage.OnWrite(table, address, quantity); err != nil {
 		s.markDegraded(err)
 	}
+}
+
+// Audit logs one write against the simulation: the entry kind (local or
+// injector), the source connection, the target range, the commit version and
+// the result.
+func (s *Simulation) Audit(source, entry, table string, address, quantity uint16, err error) {
+	result := "ok"
+	if err != nil {
+		result = "rejected: " + err.Error()
+	}
+	slog.Info("simulation write",
+		"simulation", s.Name,
+		"entry", entry,
+		"source", source,
+		"table", table,
+		"address", address,
+		"quantity", quantity,
+		"version", s.Version(),
+		"status", s.Status(),
+		"result", result,
+	)
 }
 
 func (s *Simulation) markDegraded(err error) {

@@ -1,7 +1,7 @@
 
 <div align="center">
 
-<img src="https://img.ffutop.com/B062BF78-A37A-4754-AFAF-DE72907588ED.png" alt="Modbus Gateway Logo" width="851" height="315">
+<img src="docs/assets/og-image.png" alt="Modbus Gateway Logo">
 
   <a href="https://github.com/ffutop/modbus-gateway/releases">Download</a>
   ·
@@ -748,7 +748,7 @@ graph LR
 - The gateway does not provide TLS, authentication, firewall policies, or configuration hot reload.
 - Supporting a transport does not imply support for every Modbus function code; framing and the target device also impose limits.
 - Gateways may share simulation models. Independent physical channels require separate port/serial resources.
-- HTML pages under `docs/` are not connected to the running service. There is no online configuration or live monitoring management API.
+- The management API is off by default (`ui.enabled`, `ui.listen` or `-ui-listen`; default listen `127.0.0.1:8090`). It is read-only, serving status, request events and register snapshots to the native desktop app, and cannot change configuration or inject data.
 - The main program does not integrate MQTT or Kafka. Optional pprof is a Go profiling service, not a management interface.
 - Repository configuration and examples describe the current source; historical release packages may not include these capabilities.
 
@@ -756,7 +756,7 @@ graph LR
 
 ### Build from Source (Optional)
 
-Prefer Releases when you only need to run the gateway. Build when modifying code or using unreleased features. The root module requires Go 1.21+ and access to module dependencies on the first build:
+Prefer Releases when you only need to run the gateway. Build when modifying code or using unreleased features. All three Go modules (root, `desktop-native/` and `test/`) require Go 1.24.3+ and access to module dependencies on the first build:
 
 ```bash
 git clone https://github.com/ffutop/modbus-gateway.git
