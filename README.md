@@ -1,7 +1,7 @@
 
 <div align="center">
 
-<img src="https://img.ffutop.com/B062BF78-A37A-4754-AFAF-DE72907588ED.png" alt="Modbus Gateway Logo" width="851" height="315">
+<img src="docs/assets/og-image.png" alt="Modbus Gateway Logo">
 
   <a href="https://github.com/ffutop/modbus-gateway/releases">Download</a>
   ·
